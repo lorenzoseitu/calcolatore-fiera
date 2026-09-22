@@ -51,6 +51,11 @@ img{max-width:100%;display:block}
 .field{width:100%;padding:14px 16px;border:1.5px solid var(--line);border-radius:12px;font-family:var(--font);font-size:16px;background:var(--cream-warm)}
 .field:focus{outline:none;border-color:var(--gold);background:#fff}
 .row{display:flex;gap:10px}
+.addr-box{position:relative;flex:1;display:flex}
+.sugg{position:absolute;left:0;right:0;top:calc(100% + 4px);background:#fff;border:1.5px solid var(--line);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:1000;overflow:hidden}
+.sugg button{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--line);padding:12px 16px;font-family:var(--font);font-size:15px;color:var(--ink);cursor:pointer}
+.sugg button:last-child{border-bottom:none}
+.sugg button:hover,.sugg button.on{background:var(--cream-warm)}
 .row .field{flex:1}
 .nav{display:flex;justify-content:space-between;align-items:center;margin-top:22px}
 
@@ -65,6 +70,7 @@ img{max-width:100%;display:block}
 .compass button{background:var(--cream-warm);border:1.5px solid var(--line);border-radius:12px;padding:12px 6px;font-family:var(--font);font-weight:700;font-size:14px;cursor:pointer}
 .compass button.selected{border-color:var(--gold);background:#fff;box-shadow:0 0 0 1px var(--gold)}
 .compass button small{display:block;font-weight:500;font-size:11px;color:var(--brown)}
+.compass.due{grid-template-columns:1fr 1fr}
 
 .spin{width:40px;height:40px;border-radius:50%;border:4px solid var(--line);border-top-color:var(--gold);margin:40px auto 18px;animation:spin .9s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -95,6 +101,8 @@ img{max-width:100%;display:block}
 .rosa{width:74px;height:74px;pointer-events:none;filter:drop-shadow(0 2px 6px rgba(0,0,0,.45))}
 .rosa svg{width:100%;height:100%;display:block}
 .map-hint{font-size:13px;color:var(--brown);margin-top:8px}
+.vtx{display:flex;align-items:center;justify-content:center;cursor:move}
+.vtx i{width:14px;height:14px;border-radius:50%;background:#E5B900;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.6)}
 
 /* ---------- Foglio A5 da stampare ---------- */
 /* Palette e regole da Grafica/dragondoro_graphic_style_guide.md: Grafite #3A3A3A, Oro #E5B900,
@@ -175,7 +183,10 @@ img{max-width:100%;display:block}
       <h2 class="q-title">Dove si trova la casa?</h2>
       <p class="q-hint">Via, numero civico e comune. Serve per vedere il tetto dall'alto.</p>
       <div class="row">
-        <input id="addr" class="field" placeholder="Es. Via Roma 12, Subbiano" autocomplete="off">
+        <div class="addr-box">
+          <input id="addr" class="field" placeholder="Es. Via Roma 12, Subbiano" autocomplete="off">
+          <div class="sugg" id="sugg" hidden></div>
+        </div>
         <button class="btn" id="geoBtn" style="flex:0 0 auto">Cerca</button>
       </div>
       <div id="geoMsg"></div>
@@ -185,10 +196,11 @@ img{max-width:100%;display:block}
     <!-- STEP 2 -->
     <section id="s2" hidden>
       <h2 class="q-title">Il tetto</h2>
-      <p class="q-hint">Clicca i vertici della falda sul tetto. Doppio clic per chiudere.</p>
+      <p class="q-hint">Clicca gli angoli della falda uno dopo l'altro, girandoci intorno. Se un punto è fuori posto, trascinalo.</p>
       <div id="map"></div>
       <p class="map-hint">Il nord è sempre in alto: la falda che guarda verso il basso dello schermo è esposta a sud.</p>
       <div class="map-tools">
+        <button class="btn-sec" id="undoPt">Togli l'ultimo punto</button>
         <button class="btn-sec" id="resetPoly">Ricomincia il disegno</button>
       </div>
       <div class="map-stats">
@@ -205,12 +217,6 @@ img{max-width:100%;display:block}
         <button data-a="90">Ovest<small>buono</small></button>
         <button data-a="180">Nord<small>sconsigliato</small></button>
       </div>
-      <h3 class="sec-title">Inclinazione del tetto</h3>
-      <div class="compass" id="tilt">
-        <button data-t="15">Poco<small>~15°</small></button>
-        <button data-t="30" class="selected">Normale<small>~30°</small></button>
-        <button data-t="40">Ripido<small>~40°</small></button>
-      </div>
       <div class="nav"><button class="btn-ghost" data-back="1">Indietro</button><button class="btn" id="n2" disabled>Avanti</button></div>
     </section>
 
@@ -221,6 +227,11 @@ img{max-width:100%;display:block}
       <div id="fasce"></div>
       <h3 class="sec-title">Che tipo di casa è?</h3>
       <div id="tipoCasa"></div>
+      <h3 class="sec-title">Impianto con o senza batteria?</h3>
+      <div class="compass due" id="batt">
+        <button data-b="0">Senza batteria<small>usa l'energia mentre la produce</small></button>
+        <button data-b="1">Con batteria<small>la conserva per la sera</small></button>
+      </div>
       <div class="nav"><button class="btn-ghost" data-back="2">Indietro</button><button class="btn" id="n3" disabled>Calcola</button></div>
     </section>
 
@@ -235,12 +246,16 @@ img{max-width:100%;display:block}
       <div class="result-hero">
         <span>Risparmio stimato in bolletta</span>
         <b id="rRange">—</b>
-        <small>all'anno, su questa casa</small>
+        <small id="rSub">all'anno, su questa casa</small>
+      </div>
+      <div class="compass due no-print" id="battR" style="margin:0 0 12px">
+        <button data-b="0">Senza batteria</button>
+        <button data-b="1">Con batteria</button>
       </div>
       <div class="grid2">
         <div class="kpi"><b id="rKwp">—</b><span>Impianto consigliato</span></div>
         <div class="kpi"><b id="rProd">—</b><span>Produzione annua</span></div>
-        <div class="kpi"><b id="rCop">—</b><span>Consumi coperti</span></div>
+        <div class="kpi"><b id="rCop">—</b><span>Indipendenza energetica</span></div>
         <div class="kpi"><b id="rEcc">—</b><span>In rete</span></div>
       </div>
       <div id="paybackBox" hidden style="margin-top:10px"><div class="kpi"><b id="rPay">—</b><span>Tempo di rientro</span></div></div>
@@ -251,11 +266,7 @@ img{max-width:100%;display:block}
       <div id="notaEsp" hidden class="warn"></div>
       <p class="disclaimer" id="fonte"></p>
 
-      <h3 class="sec-title">Un'ultima cosa</h3>
-      <p class="q-hint">Il fotovoltaico lo vede come una spesa da contenere il più possibile, o come un investimento che deve reggere vent'anni?</p>
-      <div id="q9"></div>
-
-      <div class="nav"><button class="btn-ghost" data-back="3">Indietro</button><button class="btn" id="n4" disabled>Avanti</button></div>
+      <div class="nav"><button class="btn-ghost" data-back="3">Indietro</button><button class="btn" id="n4">Avanti</button></div>
     </section>
 
     <!-- STEP 5 — CONTATTI -->
@@ -298,7 +309,7 @@ img{max-width:100%;display:block}
         <div><b id="pKwp">—</b><span>Impianto consigliato</span></div>
         <div><b id="pPan">—</b><span>Pannelli</span></div>
         <div><b id="pProd">—</b><span>Produzione annua</span></div>
-        <div><b id="pCop">—</b><span>Consumi coperti</span></div>
+        <div><b id="pCop">—</b><span>Indipendenza energetica</span></div>
         <div><b id="pAuto">—</b><span>Usata in casa</span></div>
         <div><b id="pEcc">—</b><span>Immessa in rete</span></div>
       </div>
@@ -309,9 +320,9 @@ img{max-width:100%;display:block}
             <tr><td>Spesa luce al mese</td><td id="pSpesa">—</td></tr>
             <tr><td>Consumo stimato</td><td id="pCons">—</td></tr>
             <tr><td>Tipo di casa</td><td id="pTipo">—</td></tr>
+            <tr><td>Batteria</td><td id="pBatt">—</td></tr>
             <tr><td>Falda disegnata</td><td id="pArea">—</td></tr>
             <tr><td>Esposizione</td><td id="pEsp">—</td></tr>
-            <tr><td>Inclinazione</td><td id="pInc">—</td></tr>
           </table>
         </div>
         <div class="p-card">
@@ -366,7 +377,17 @@ const CFG = {
   // Si evita di produrre energia che finisce in rete a 0,10 quando in bolletta vale 0,28.
   FRAZIONE_DIURNA:     0.60,   // quota di consumo annuo copribile in diretta   TODO
   AUTOCONSUMO_SU_PROD: 0.80,   // quota di produzione autoconsumata a questa taglia  TODO
-  AREA_PER_KWP:        4.6,    // m² di falda per 1 kWp installato           TODO
+  // Con batteria (aggiunto il 2026-09-22): l'energia prodotta di giorno si sposta alla sera,
+  // quindi l'impianto si taglia su quasi tutto il consumo annuo invece che sulla quota diurna.
+  DIMENS_BATTERIA:     0.90,   // produzione annua / consumo annuo, con batteria   TODO
+  AUTOCONSUMO_BATT:    0.80,   // quota di produzione usata in casa, con batteria (Lorenzo, 2026-09-22: stima, si conferma sulla bolletta)
+  // Taglie di batteria abbinate alla potenza dell'impianto (Lorenzo, 2026-09-22):
+  // fino a 3 kWp → 5 kWh; oltre 3 e sotto 8 kWp → 10 kWh; da 8 kWp in su → 20 kWh
+  BATT_TAGLIE: [{fino:3, kwh:5}, {fino:7.99, kwh:10}, {fino:Infinity, kwh:20}],
+  // Pannello venduto da Dragondoro (Lorenzo, 2026-09-22): 1,76 × 1,13 m. Sostituisce il vecchio
+  // AREA_PER_KWP: ora sul tetto si contano pannelli interi, e i kWp vengono dai pannelli.
+  PANNELLO_L:          1.76,   // m
+  PANNELLO_H:          1.13,   // m
   FRAZIONE_UTILE:      0.75,   // quota di falda realmente sfruttabile       TODO
   W_PANNELLO:          450,    // W per pannello                             TODO
   PERDITE_SISTEMA:     14,     // % perdite di sistema (PVGIS)               TODO
@@ -390,7 +411,7 @@ const CFG = {
 };
 
 const S = {step:1, lat:null, lon:null, addr:'', area:0, kwpTetto:0, aspect:null,
-           tilt:30, spesa:null, tipo:'', q9:'', prodKwp:null, mensili:null, fonte:''};
+           tilt:15, spesa:null, tipo:'', batt:null, prodKwp:null, mensili:null, fonte:''};
 
 const $ = s => document.querySelector(s);
 // In it-IT Intl non mette il punto sui numeri a 4 cifre (1050): lo forzo, così 1.050 e 12.500 si leggono uguali
@@ -413,45 +434,91 @@ function go(n){
 document.querySelectorAll('[data-back]').forEach(b=>b.onclick=()=>go(+b.dataset.back));
 
 /* ---------- step 1: geocoding ---------- */
-async function geocode(){
-  const q=$('#addr').value.trim();
-  if(q.length<5){$('#geoMsg').innerHTML='<div class="err">Scrivi via, civico e comune.</div>';return}
-  // Azzero prima di cercare: se la ricerca fallisce non deve restare in memoria
-  // l'indirizzo della persona precedente, che poi finirebbe stampato sul suo foglio.
+// Geocoding Esri World (2026-09-22) al posto di Nominatim, che sbagliava comune o non trovava
+// i civici della zona ("Via Roma 12, Subbiano" finiva a Castelnuovo). Nessuna chiave richiesta.
+// I suggerimenti mentre si scrive fanno scegliere all'operatore il comune giusto.
+const ESRI='https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/';
+const VICINO='&countryCode=ITA&location=11.8796,43.4633';     // privilegia i risultati vicino ad Arezzo
+let suggT=null, suggN=0, suggOn=-1;
+function azzeraIndirizzo(){
+  // Se la ricerca fallisce non deve restare in memoria l'indirizzo della persona precedente,
+  // che poi finirebbe stampato sul suo foglio.
   S.lat=null; S.lon=null; S.addr=''; $('#n1').disabled=true;
+}
+function chiudiSugg(){ $('#sugg').hidden=true; $('#sugg').innerHTML=''; suggOn=-1 }
+async function suggerisci(){
+  const q=$('#addr').value.trim(), n=++suggN;
+  if(q.length<4){chiudiSugg();return}
+  try{
+    const r=await fetch(ESRI+'suggest?f=json&maxSuggestions=6'+VICINO+'&text='+encodeURIComponent(q));
+    const j=await r.json();
+    if(n!==suggN) return;                                          // arrivata tardi, l'operatore ha già scritto altro
+    const L=(j.suggestions||[]);
+    if(!L.length){chiudiSugg();return}
+    $('#sugg').innerHTML=''; suggOn=-1;
+    L.forEach(x=>{
+      const b=document.createElement('button'); b.type='button';
+      b.textContent=x.text.replace(/, ITA$/,'');
+      b.onmousedown=e=>e.preventDefault();                         // non far perdere il focus al campo
+      b.onclick=()=>{ $('#addr').value=b.textContent; chiudiSugg(); geocode(x.magicKey) };
+      $('#sugg').appendChild(b);
+    });
+    $('#sugg').hidden=false;
+  }catch(e){ chiudiSugg() }
+}
+async function geocode(magicKey){
+  const q=$('#addr').value.trim();
+  chiudiSugg();
+  if(q.length<5){$('#geoMsg').innerHTML='<div class="err">Scrivi via, civico e comune.</div>';return}
+  azzeraIndirizzo();
   $('#geoMsg').innerHTML='<div class="warn">Cerco l\'indirizzo…</div>';
   try{
-    const u='https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&countrycodes=it&q='+encodeURIComponent(q);
-    const r=await fetch(u,{headers:{'Accept':'application/json'}});
-    const j=await r.json();
-    if(!j.length){$('#geoMsg').innerHTML='<div class="err">Indirizzo non trovato. Prova senza il civico, poi sposta la mappa a mano.</div>';return}
-    S.lat=+j[0].lat; S.lon=+j[0].lon;
-    // display_name mette il civico davanti e usa spazi doppi ("12,  Via Roma,  Casa Gano").
-    // Ricompongo dai campi strutturati, così sul foglio si legge come lo scrive una persona.
-    const a=j[0].address||{};
-    const via=[a.road||a.hamlet||'', a.house_number||''].filter(Boolean).join(' ');
-    const comune=a.town||a.village||a.city||a.municipality||'';
-    S.addr = via ? [via, comune].filter(Boolean).join(', ')
-                 : j[0].display_name.split(',').map(x=>x.trim()).filter(Boolean).slice(0,3).join(', ');
-    $('#geoMsg').innerHTML='<div class="warn">Trovato: '+S.addr+'</div>';
+    const u=ESRI+'findAddressCandidates?f=json&maxLocations=1&outFields=StAddr,City,Addr_type'+VICINO+
+      '&singleLine='+encodeURIComponent(q)+(typeof magicKey==='string'?'&magicKey='+encodeURIComponent(magicKey):'');
+    const j=await (await fetch(u)).json();
+    const c=(j.candidates||[])[0];
+    if(!c){$('#geoMsg').innerHTML='<div class="err">Indirizzo non trovato. Prova solo via e comune, poi sposta la mappa a mano.</div>';return}
+    S.lat=c.location.y; S.lon=c.location.x;
+    // Nuovo indirizzo, nuovo tetto: via la falda e l'esposizione del cliente precedente
+    azzeraDisegno(); S.aspect=null;
+    $('#compass').querySelectorAll('button').forEach(x=>x.classList.remove('selected'));
+    const a=c.attributes||{};
+    S.addr=[a.StAddr, a.City].filter(Boolean).join(', ') || c.address;
+    // Senza civico preciso Esri mette il punto a metà via o al centro del paese: va detto
+    const preciso = a.Addr_type==='PointAddress' || a.Addr_type==='Subaddress';
+    $('#geoMsg').innerHTML='<div class="warn">Trovato: <b>'+S.addr+'</b>'+
+      (preciso?'':'<br>Posizione approssimativa: al passaggio dopo sposta la mappa sulla casa giusta.')+'</div>';
     $('#n1').disabled=false;
-    map.setView([S.lat,S.lon],20);
+    map.setView([S.lat,S.lon], preciso?20:17);
   }catch(e){
-    // Si va avanti a mano, ma l'indirizzo resta quello digitato dall'operatore,
-    // mai quello di prima.
+    // Si va avanti a mano, ma l'indirizzo resta quello digitato dall'operatore, mai quello di prima.
     S.addr=q;
     $('#geoMsg').innerHTML='<div class="err">Rete non raggiungibile. Sposta la mappa a mano al passaggio successivo.</div>';
     $('#n1').disabled=false;
   }
 }
-$('#geoBtn').onclick=geocode;
-$('#addr').addEventListener('keydown',e=>{if(e.key==='Enter')geocode()});
+$('#geoBtn').onclick=()=>geocode();
+$('#addr').addEventListener('input',()=>{ azzeraIndirizzo(); $('#geoMsg').innerHTML=''; clearTimeout(suggT); suggT=setTimeout(suggerisci,250) });
+$('#addr').addEventListener('blur',()=>setTimeout(chiudiSugg,150));
+$('#addr').addEventListener('keydown',e=>{
+  const B=[...$('#sugg').querySelectorAll('button')];
+  if(!$('#sugg').hidden && (e.key==='ArrowDown'||e.key==='ArrowUp') && B.length){
+    e.preventDefault();
+    suggOn=(suggOn+(e.key==='ArrowDown'?1:-1)+B.length)%B.length;
+    B.forEach((b,i)=>b.classList.toggle('on',i===suggOn));
+  } else if(e.key==='Enter'){
+    e.preventDefault();
+    if(!$('#sugg').hidden && suggOn>=0) B[suggOn].click(); else geocode();
+  } else if(e.key==='Escape') chiudiSugg();
+});
 $('#n1').onclick=()=>go(2);
 
 /* ---------- step 2: mappa e disegno ---------- */
-const map=L.map('map',{center:[43.4633,11.8796],zoom:16,maxZoom:21});
+// Niente zoom al doppio clic: prima il doppio clic "per chiudere" zoomava a 21 e sgranava la foto.
+// Le foto Esri arrivano a 19, a 20 sono ancora leggibili, oltre solo pixel ingranditi.
+const map=L.map('map',{center:[43.4633,11.8796],zoom:16,maxZoom:20,doubleClickZoom:false});
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-  {maxZoom:21,maxNativeZoom:19,attribution:'Esri, Maxar, Earthstar Geographics'}).addTo(map);
+  {maxZoom:20,maxNativeZoom:19,attribution:'Esri, Maxar, Earthstar Geographics'}).addTo(map);
 
 // Bussola fissa: Leaflet non ruota la mappa, quindi il nord resta in alto e basta un controllo statico
 const Rosa=L.Control.extend({options:{position:'topright'},onAdd(){
@@ -486,30 +553,47 @@ function areaM2(latlngs){                       // formula dei trapezi su sferoi
 function redraw(){
   if(poly) map.removeLayer(poly);
   if(pts.length>1){
-    poly=L.polygon(pts,{color:'#E5B900',weight:3,fillOpacity:.35}).addTo(map);
+    poly=L.polygon(pts,{color:'#E5B900',weight:3,fillOpacity:.35,interactive:false}).addTo(map);
   }
   const a=pts.length>2?areaM2(pts.map(p=>L.latLng(p[0],p[1]))):0;
   S.area=a;
   const utile=a*CFG.FRAZIONE_UTILE;
-  S.kwpTetto=utile/CFG.AREA_PER_KWP;
-  const pannelli=Math.floor(S.kwpTetto*1000/CFG.W_PANNELLO);
+  const pannelli=Math.floor(utile/(CFG.PANNELLO_L*CFG.PANNELLO_H));   // pannelli interi che ci stanno
+  S.panTetto=pannelli;
+  S.kwpTetto=pannelli*CFG.W_PANNELLO/1000;
   $('#stArea').textContent = a?fmtN(a):'—';
   $('#stPan').textContent  = a?pannelli:'—';
   $('#stKwp').textContent  = a?fmtN(S.kwpTetto,1):'—';
   checkStep2();
 }
-map.on('click',e=>{if(e.originalEvent && e.originalEvent.detail>1) return; pts.push([e.latlng.lat,e.latlng.lng]);markers.push(L.circleMarker(e.latlng,{radius:5,color:'#E5B900',fillOpacity:1}).addTo(map));redraw()});
-map.on('dblclick',e=>{map.doubleClickZoom.disable();setTimeout(()=>map.doubleClickZoom.enable(),400)});
-$('#resetPoly').onclick=()=>{pts=[];markers.forEach(m=>map.removeLayer(m));markers=[];if(poly)map.removeLayer(poly);poly=null;redraw()};
+// Vertici trascinabili: un punto messo male si corregge senza rifare tutto.
+// Il clic su un vertice non arriva alla mappa, quindi non aggiunge punti per sbaglio.
+const icona=L.divIcon({className:'vtx',html:'<i></i>',iconSize:[26,26]});
+function aggiungiVertice(ll){
+  const i=pts.length;
+  pts.push([ll.lat,ll.lng]);
+  const m=L.marker(ll,{icon:icona,draggable:true,autoPan:true}).addTo(map);
+  m.on('drag',ev=>{const p=ev.target.getLatLng(); pts[i]=[p.lat,p.lng]; redraw()});
+  markers.push(m);
+  redraw();
+}
+map.on('click',e=>{
+  // Un doppio clic veloce darebbe due punti sovrapposti: scarto quelli a meno di 6 px dall'ultimo
+  if(pts.length){
+    const u=map.latLngToContainerPoint(pts[pts.length-1]);
+    if(u.distanceTo(e.containerPoint)<6) return;
+  }
+  aggiungiVertice(e.latlng);
+});
+$('#undoPt').onclick=()=>{ if(!pts.length) return; pts.pop(); map.removeLayer(markers.pop()); redraw() };
+function azzeraDisegno(){ pts=[]; markers.forEach(m=>map.removeLayer(m)); markers=[]; if(poly) map.removeLayer(poly); poly=null; redraw() }
+$('#resetPoly').onclick=azzeraDisegno;
 
 $('#compass').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   $('#compass').querySelectorAll('button').forEach(x=>x.classList.remove('selected'));
   b.classList.add('selected'); S.aspect=+b.dataset.a; checkStep2();
 });
-$('#tilt').querySelectorAll('button').forEach(b=>b.onclick=()=>{
-  $('#tilt').querySelectorAll('button').forEach(x=>x.classList.remove('selected'));
-  b.classList.add('selected'); S.tilt=+b.dataset.t;
-});
+// Inclinazione tolta il 2026-09-22 (Lorenzo): si calcola tutto su falda a 15°.
 function checkStep2(){ $('#n2').disabled = !(S.area>4 && S.aspect!==null) }
 $('#n2').onclick=()=>{S.lat=map.getCenter().lat;S.lon=map.getCenter().lng;go(3)};
 
@@ -532,7 +616,17 @@ function radio(host, items, cb){
 }
 radio($('#fasce'),FASCE,it=>{S.spesa=it.v;S.spesaLabel=it.l;checkStep3()});
 radio($('#tipoCasa'),TIPI,it=>{S.tipo=it;checkStep3()});
-function checkStep3(){ $('#n3').disabled = !(S.spesa && S.tipo) }
+function scegliBatt(v){
+  S.batt=v;
+  ['#batt','#battR'].forEach(h=>$(h).querySelectorAll('button').forEach(b=>b.classList.toggle('selected',+b.dataset.b===v)));
+}
+$('#batt').querySelectorAll('button').forEach(b=>b.onclick=()=>{scegliBatt(+b.dataset.b);checkStep3()});
+// Sul risultato l'operatore passa da una versione all'altra davanti al cliente, senza tornare indietro
+$('#battR').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+  if(+b.dataset.b===S.batt) return;
+  scegliBatt(+b.dataset.b); calcolaNumeri(); mostra();
+});
+function checkStep3(){ $('#n3').disabled = !(S.spesa && S.tipo && S.batt!==null) }
 $('#n3').onclick=calcola;
 
 /* ---------- calcolo ---------- */
@@ -542,27 +636,36 @@ function resa(){
 }
 function calcola(){
   go('Load'); $('#stepName').textContent='Calcolo'; $('#stepNum').textContent='';
-  setTimeout(()=>{
-    const consumo = (S.spesa*12)/CFG.PREZZO_ENERGIA;              // kWh/anno
-    const r = resa();
-    // Taglia sull'autoconsumo: produzione pari alla quota di consumo copribile in diretta,
-    // non al fabbisogno annuo. Il tetto resta il limite fisico.
-    const kwpUtile = (consumo*CFG.FRAZIONE_DIURNA)/r.perKwp;
-    S.kwp = Math.max(2, Math.min(S.kwpTetto, kwpUtile));
-    S.prodKwp = S.kwp*r.perKwp;
-    S.mensili = r.mensili.map(v=>v*S.kwp);
-    S.fonte = 'PVGIS-SARAH2 (Commissione Europea), resa misurata su questo territorio';
-    const auto = Math.min(S.prodKwp*CFG.AUTOCONSUMO_SU_PROD, consumo);
-    const ecc  = Math.max(0, S.prodKwp-auto);
-    const risp = auto*CFG.PREZZO_ENERGIA + ecc*CFG.PREZZO_IMMISSIONE;
-    S.calc = {consumo, auto, ecc, risp, cop:auto/consumo};
-    mostra();
-  }, 900);   // pausa breve: il calcolo deve sembrare un calcolo, non un interruttore
+  setTimeout(()=>{ calcolaNumeri(); mostra(); }, 900);   // pausa breve: il calcolo deve sembrare un calcolo, non un interruttore
+}
+function calcolaNumeri(){
+  const consumo = (S.spesa*12)/CFG.PREZZO_ENERGIA;              // kWh/anno
+  const r = resa();
+  // Senza batteria: taglia sull'autoconsumo, produzione pari alla quota di consumo copribile
+  // in diretta, non al fabbisogno annuo. Con batteria: taglia su quasi tutto il consumo.
+  // In entrambi i casi il tetto resta il limite fisico.
+  const quota = S.batt ? CFG.DIMENS_BATTERIA : CFG.FRAZIONE_DIURNA;
+  const kwpUtile = (consumo*quota)/r.perKwp;
+  // L'impianto è fatto di pannelli interi: arrotondo per eccesso, minimo 2 kWp, massimo quelli che stanno sul tetto
+  const panMin=Math.ceil(2000/CFG.W_PANNELLO);
+  S.pannelli = Math.max(panMin, Math.min(S.panTetto, Math.ceil(kwpUtile*1000/CFG.W_PANNELLO)));
+  S.kwp = S.pannelli*CFG.W_PANNELLO/1000;
+  S.prodKwp = S.kwp*r.perKwp;
+  S.mensili = r.mensili.map(v=>v*S.kwp);
+  S.fonte = 'PVGIS-SARAH2 (Commissione Europea), resa misurata su questo territorio';
+  const auto = Math.min(S.prodKwp*(S.batt ? CFG.AUTOCONSUMO_BATT : CFG.AUTOCONSUMO_SU_PROD), consumo);
+  const ecc  = Math.max(0, S.prodKwp-auto);
+  const risp = auto*CFG.PREZZO_ENERGIA + ecc*CFG.PREZZO_IMMISSIONE;
+  S.battKwh = S.batt ? CFG.BATT_TAGLIE.find(t=>Math.round(S.kwp*10)/10<=t.fino).kwh : 0;
+  S.calc = {consumo, auto, ecc, risp, cop:auto/consumo};
 }
 function mostra(){
   const c=S.calc, lo=c.risp*(1-CFG.BANDA), hi=c.risp*(1+CFG.BANDA);
   const range = fmtE(Math.round(lo/50)*50)+' – '+fmtE(Math.round(hi/50)*50);
   $('#rRange').textContent=range;
+  $('#rSub').textContent = S.batt
+    ? "all'anno, su questa casa, con batteria da circa "+fmtN(S.battKwh,1)+' kWh'
+    : "all'anno, su questa casa, senza batteria";
   $('#rKwp').textContent=fmtN(S.kwp,1)+' kWp';
   $('#rProd').textContent=fmtN(S.prodKwp)+' kWh';
   $('#rCop').textContent=Math.round(c.cop*100)+'%';
@@ -579,12 +682,8 @@ function mostra(){
     : '';
   $('#notaEsp').hidden = !S.nota; $('#notaEsp').textContent = S.nota;
   $('#fonte').textContent='Fonte della produzione: '+S.fonte+'. Stima indicativa: il valore esatto si determina con il sopralluogo.';
-  radio($('#q9'),[
-    {l:'Un investimento che deve reggere nel tempo'},
-    {l:'Una spesa da contenere il più possibile'},
-    {l:'Non ho ancora deciso'}
-  ],it=>{S.q9=it.l;$('#n4').disabled=false});
-  go(4);
+  // Domanda di autoidentificazione (Q9 Merenda) tolta il 2026-09-22 su richiesta di Lorenzo
+  if(S.step!==4) go(4);
 }
 $('#n4').onclick=()=>go(5);
 
@@ -593,7 +692,6 @@ $('#n4').onclick=()=>go(5);
   $('#nPrint').disabled = !($('#cNome').value.trim() && $('#cTel').value.trim().length>=8 && $('#cPriv').checked);
 }));
 const ESPOSIZIONI={'0':'Sud','-45':'Sud-est','45':'Sud-ovest','-90':'Est','90':'Ovest','180':'Nord'};
-const INCLINAZIONI={15:'Poco inclinato, ~15°',30:'Normale, ~30°',40:'Ripido, ~40°'};
 function riempiFoglio(){
   const c=S.calc, lo=c.risp*(1-CFG.BANDA), hi=c.risp*(1+CFG.BANDA);
   $('#pNome').textContent=$('#cNome').value.trim();
@@ -601,7 +699,7 @@ function riempiFoglio(){
   $('#pData').textContent=new Date().toLocaleDateString('it-IT',{day:'numeric',month:'long',year:'numeric'});
   $('#pRange').innerHTML=fmtE(Math.round(lo/50)*50)+' – '+fmtE(Math.round(hi/50)*50)+'<small>l\'anno</small>';
   $('#pKwp').textContent=fmtN(S.kwp,1)+' kWp';
-  $('#pPan').textContent=Math.ceil(S.kwp*1000/CFG.W_PANNELLO)+' da '+CFG.W_PANNELLO+' W';
+  $('#pPan').textContent=S.pannelli+' da '+CFG.W_PANNELLO+' W';
   $('#pProd').textContent=fmtN(S.prodKwp)+' kWh';
   $('#pCop').textContent=Math.round(c.cop*100)+'%';
   $('#pAuto').textContent=fmtN(c.auto)+' kWh';
@@ -609,9 +707,9 @@ function riempiFoglio(){
   $('#pSpesa').textContent=S.spesaLabel||'—';
   $('#pCons').textContent=fmtN(c.consumo)+' kWh/anno';
   $('#pTipo').textContent=S.tipo||'—';
+  $('#pBatt').textContent=S.batt ? 'Sì, circa '+fmtN(S.battKwh,1)+' kWh' : 'No';
   $('#pArea').textContent=fmtN(S.area)+' m²';
   $('#pEsp').textContent=ESPOSIZIONI[S.aspect]||'—';
-  $('#pInc').textContent=INCLINAZIONI[S.tilt]||'—';
   const max=Math.max(...S.mensili);
   $('#pChart').innerHTML=S.mensili.map(v=>`<div style="height:${Math.max(3,v/max*100)}%"></div>`).join('');
   $('#pNota').hidden = !S.nota; $('#pNota').textContent = S.nota;
