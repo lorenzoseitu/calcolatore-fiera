@@ -102,6 +102,8 @@ img{max-width:100%;display:block}
 .map-hint{font-size:13px;color:var(--brown);margin-top:8px}
 .vtx{display:flex;align-items:center;justify-content:center;cursor:move}
 .falde{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.falde[hidden]{display:none}
+.btn-sec:disabled{opacity:.4;cursor:not-allowed}
 .falda-chip{display:flex;align-items:center;gap:8px;background:var(--cream-warm);border:1.5px solid var(--line);border-radius:999px;padding:8px 14px;font-family:var(--font);font-weight:700;font-size:14px;color:var(--ink);cursor:pointer}
 .falda-chip.on{border-color:var(--gold);background:#fff;box-shadow:0 0 0 1px var(--gold)}
 .falda-chip i{width:12px;height:12px;border-radius:50%;border:1px solid rgba(0,0,0,.35)}
@@ -225,8 +227,9 @@ img{max-width:100%;display:block}
         <button data-a="180">Nord<small>sconsigliato</small></button>
       </div>
       <div class="add-falda">
-        <button class="btn-sec" id="addFalda" disabled>+ Aggiungi un'altra falda</button>
+        <button class="btn-sec" id="addFalda">+ Aggiungi un'altra falda</button>
         <small>Per esempio est e ovest, quando su una falda sola non ci stanno abbastanza pannelli.</small>
+        <div id="addMsg"></div>
       </div>
       <div class="nav"><button class="btn-ghost" data-back="1">Indietro</button><button class="btn" id="n2" disabled>Avanti</button></div>
     </section>
@@ -635,7 +638,16 @@ function eliminaFalda(i){
 }
 // Nuovo indirizzo, nuovo tetto: via tutte le falde e le esposizioni del cliente precedente
 function azzeraDisegno(){ falde.forEach(svuota); falde=[]; nuovaFalda(); redraw() }
-$('#addFalda').onclick=()=>{ nuovaFalda(); redraw() };
+// Il pulsante resta cliccabile: se la falda in corso non è completa dice cosa manca, invece di non fare niente
+$('#addFalda').onclick=()=>{
+  const f=falde[att], n=att+1;
+  if(!f.pan){ $('#addMsg').innerHTML='<div class="err">Prima disegna la falda'+(falde.length>1?' '+n:'')+' sulla mappa.</div>'; return }
+  if(f.aspect===null){ $('#addMsg').innerHTML='<div class="err">Prima scegli qui sopra verso dove guarda la falda'+(falde.length>1?' '+n:'')+'.</div>'; return }
+  const vuota=falde.findIndex(x=>!x.pts.length);
+  if(vuota>=0){ attiva(vuota) } else { nuovaFalda(); redraw() }
+  $('#addMsg').innerHTML='';
+  $('#falde').scrollIntoView({behavior:'smooth',block:'start'});    // si torna alla mappa per disegnare
+};
 nuovaFalda();
 
 $('#compass').querySelectorAll('button').forEach(b=>b.onclick=()=>{ falde[att].aspect=+b.dataset.a; redraw() });
@@ -644,7 +656,8 @@ function checkStep2(){
   // Le falde appena aggiunte e non ancora disegnate non contano; quelle iniziate devono essere complete
   const iniziate=falde.filter(f=>f.pts.length);
   $('#n2').disabled = !(iniziate.length && iniziate.every(faldaOk));
-  $('#addFalda').disabled = !(falde.length<MAX_FALDE && falde.every(faldaOk));
+  $('#addFalda').disabled = falde.length>=MAX_FALDE && falde.every(x=>x.pts.length);
+  if(falde.every(faldaOk)) $('#addMsg').innerHTML='';
 }
 $('#n2').onclick=()=>{S.lat=map.getCenter().lat;S.lon=map.getCenter().lng;go(3)};
 
@@ -716,13 +729,16 @@ function calcolaNumeri(){
   S.tettoLimita = panServono > S.panTetto;
   S.panServono = panServono;
   S.kwp = S.pannelli*CFG.W_PANNELLO/1000;
-  // Con più falde i pannelli vanno prima su quella che rende di più, poi sulle altre
+  // Con più falde i pannelli si dividono in parti uguali, uno a testa a giro, finché ci stanno
+  // (es. est + ovest: 7 + 6). Il pannello dispari va alla falda che rende di più. Prima andavano
+  // tutti sulla falda migliore e la seconda restava vuota, come se non fosse stata disegnata.
   let resto=S.pannelli;
-  S.ripartizione = falde.filter(faldaOk)
-    .map(f=>({aspect:f.aspect, pan:f.pan, r:resa(f.aspect)}))
-    .sort((x,y)=>y.r.perKwp-x.r.perKwp)
-    .map(f=>{ const n=Math.min(f.pan,resto); resto-=n; return {...f, n} })
-    .filter(f=>f.n>0);
+  const FR = falde.filter(faldaOk)
+    .map(f=>({aspect:f.aspect, pan:f.pan, r:resa(f.aspect), n:0}))
+    .sort((x,y)=>y.r.perKwp-x.r.perKwp);
+  while(resto>0 && FR.some(f=>f.n<f.pan))
+    FR.forEach(f=>{ if(resto>0 && f.n<f.pan){ f.n++; resto-- } });
+  S.ripartizione = FR.filter(f=>f.n>0);
   S.prodKwp = 0; S.mensili = Array(12).fill(0);                   // prodKwp = produzione annua totale, kWh
   S.ripartizione.forEach(f=>{
     const kwp=f.n*CFG.W_PANNELLO/1000;
