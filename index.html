@@ -203,9 +203,7 @@ img{max-width:100%;display:block}
         <button class="btn-sec" id="resetPoly">Ricomincia il disegno</button>
       </div>
       <div class="map-stats">
-        <div class="stat"><b id="stArea">—</b><span>m² falda</span></div>
-        <div class="stat"><b id="stPan">—</b><span>pannelli</span></div>
-        <div class="stat"><b id="stKwp">—</b><span>kWp</span></div>
+        <div class="stat" style="flex:0 0 160px"><b id="stArea">—</b><span>m² falda</span></div>
       </div>
       <h3 class="sec-title">Verso dove guarda la falda?</h3>
       <div class="compass" id="compass">
@@ -548,8 +546,8 @@ function redraw(){
   S.panTetto=pannelli;
   S.kwpTetto=pannelli*CFG.W_PANNELLO/1000;
   $('#stArea').textContent = a?fmtN(a):'—';
-  $('#stPan').textContent  = a?pannelli:'—';
-  $('#stKwp').textContent  = a?fmtN(S.kwpTetto,1):'—';
+  // Pannelli e kWp del tetto non si mostrano qui (Lorenzo, 2026-09-22): sono il massimo che ci sta,
+  // non l'impianto consigliato, e vederli cambiare al risultato confondeva.
   checkStep2();
 }
 // Vertici trascinabili: un punto messo male si corregge senza rifare tutto.
@@ -580,7 +578,7 @@ $('#compass').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   b.classList.add('selected'); S.aspect=+b.dataset.a; checkStep2();
 });
 // Inclinazione tolta il 2026-09-22 (Lorenzo): si calcola tutto su falda a 15°.
-function checkStep2(){ $('#n2').disabled = !(S.area>4 && S.aspect!==null) }
+function checkStep2(){ $('#n2').disabled = !(S.panTetto>=1 && S.aspect!==null) }
 $('#n2').onclick=()=>{S.lat=map.getCenter().lat;S.lon=map.getCenter().lng;go(3)};
 
 /* ---------- step 3: fasce e tipo casa ---------- */
@@ -619,9 +617,13 @@ function calcolaNumeri(){
   const r = resa();
   // Taglia su quasi tutto il consumo annuo (con batteria); il tetto resta il limite fisico.
   const kwpUtile = (consumo*CFG.DIMENS_BATTERIA)/r.perKwp;
-  // L'impianto è fatto di pannelli interi: arrotondo per eccesso, minimo 2 kWp, massimo quelli che stanno sul tetto
+  // L'impianto è fatto di pannelli interi: arrotondo per eccesso, minimo 2 kWp.
+  // Il tetto è il limite assoluto, anche sopra il minimo: mai più pannelli di quelli che ci stanno.
   const panMin=Math.ceil(2000/CFG.W_PANNELLO);
-  S.pannelli = Math.max(panMin, Math.min(S.panTetto, Math.ceil(kwpUtile*1000/CFG.W_PANNELLO)));
+  const panServono=Math.max(panMin, Math.ceil(kwpUtile*1000/CFG.W_PANNELLO));
+  S.pannelli = Math.min(S.panTetto, panServono);
+  S.tettoLimita = panServono > S.panTetto;
+  S.panServono = panServono;
   S.kwp = S.pannelli*CFG.W_PANNELLO/1000;
   S.prodKwp = S.kwp*r.perKwp;
   S.mensili = r.mensili.map(v=>v*S.kwp);
@@ -648,9 +650,11 @@ function mostra(){
   const max=Math.max(...S.mensili);
   $('#chart').innerHTML=S.mensili.map(v=>`<div style="height:${Math.max(3,v/max*100)}%"></div>`).join('');
   const sud=CFG.PVGIS_ANNO['0_'+S.tilt], qui=CFG.PVGIS_ANNO[S.aspect+'_'+S.tilt];
-  S.nota = (qui/sud < CFG.SOGLIA_ESPOSIZIONE)
-    ? 'Su questa esposizione il tetto rende il '+Math.round((1-qui/sud)*100)+'% in meno rispetto a una falda a sud. Per arrivare allo stesso risparmio serve un impianto più grande, quindi più costoso. Il conto esatto si fa al sopralluogo.'
-    : '';
+  const note=[];
+  if(S.tettoLimita) note.push('Sulla falda disegnata stanno '+S.pannelli+' pannelli: per i consumi di questa casa ne servirebbero '+
+    S.panServono+'. Il risparmio mostrato è quello dei pannelli che ci stanno. Al sopralluogo si verifica se c\'è spazio su altre falde.');
+  if(qui/sud < CFG.SOGLIA_ESPOSIZIONE) note.push('Su questa esposizione il tetto rende il '+Math.round((1-qui/sud)*100)+'% in meno rispetto a una falda a sud. Per arrivare allo stesso risparmio serve un impianto più grande, quindi più costoso. Il conto esatto si fa al sopralluogo.');
+  S.nota = note.join(' ');
   $('#notaEsp').hidden = !S.nota; $('#notaEsp').textContent = S.nota;
   $('#fonte').textContent='Fonte della produzione: '+S.fonte+'. Stima indicativa: il valore esatto si determina con il sopralluogo.';
   // Domanda di autoidentificazione (Q9 Merenda) tolta il 2026-09-22 su richiesta di Lorenzo
