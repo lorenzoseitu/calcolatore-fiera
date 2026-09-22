@@ -361,10 +361,17 @@ const CFG = {
   PREZZO_ENERGIA:      0.28,   // €/kWh pagati in bolletta, tutto compreso   TODO
   PREZZO_IMMISSIONE:   0.10,   // €/kWh riconosciuti sull'eccedenza          TODO
   // Impianto sempre con batteria (Lorenzo, 2026-09-22): la versione senza batteria è stata tolta.
-  // L'energia prodotta di giorno si sposta alla sera, quindi l'impianto si taglia su quasi tutto
-  // il consumo annuo.
-  DIMENS_BATTERIA:     0.90,   // produzione annua / consumo annuo, con batteria   TODO
+  // Taglia dell'impianto dalla tabella commerciale Dragondoro (Lorenzo, 2026-09-22), in base
+  // al consumo annuo in kWh. Sopra gli 8.000 kWh: +2 kWp ogni 2.000 kWh, fino a 20.000.
+  TAGLIE_IMPIANTO: [
+    {fino:3000, kwp:3}, {fino:4500, kwp:4}, {fino:8000, kwp:6}, {fino:10000, kwp:8},
+    {fino:12000, kwp:10}, {fino:14000, kwp:12}, {fino:16000, kwp:14}, {fino:18000, kwp:16},
+    {fino:Infinity, kwp:18}
+  ],
   AUTOCONSUMO_BATT:    0.80,   // quota di produzione usata in casa, con batteria (Lorenzo, 2026-09-22: stima, si conferma sulla bolletta)
+  // Tetto all'indipendenza: con impianti più grandi del consumo l'80% della produzione supererebbe
+  // i consumi. L'energia usata in casa non va oltre l'80% del consumo (Lorenzo, 2026-09-22).
+  INDIPENDENZA_MAX:    0.80,
   // Taglie di batteria abbinate alla potenza dell'impianto (Lorenzo, 2026-09-22):
   // fino a 3 kWp → 5 kWh; oltre 3 e sotto 8 kWp → 10 kWh; da 8 kWp in su → 20 kWh
   BATT_TAGLIE: [{fino:3, kwh:5}, {fino:7.99, kwh:10}, {fino:Infinity, kwh:20}],
@@ -377,8 +384,7 @@ const CFG = {
   W_PANNELLO:          470,    // W per pannello venduto da Dragondoro (Lorenzo, 2026-09-22)
   PERDITE_SISTEMA:     14,     // % perdite di sistema (PVGIS)               TODO
   COSTO_PER_KWP:       null,   // €/kWp — serve solo se MOSTRA_PAYBACK = true
-  // Sotto questa quota della resa a sud, l'esposizione va segnalata: a parità di risparmio
-  // serve un impianto più grande, e il cliente deve saperlo prima del sopralluogo.
+  // Sotto questa quota della resa a sud, l'esposizione va segnalata al cliente.
   SOGLIA_ESPOSIZIONE:  0.90,
   BANDA:               0.15,   // ampiezza dell'intervallo mostrato (±15%)
   // Spento per decisione di Lorenzo del 2026-09-04: il piano dice di non mostrare
@@ -616,12 +622,12 @@ function calcola(){
 function calcolaNumeri(){
   const consumo = (S.spesa*12)/CFG.PREZZO_ENERGIA;              // kWh/anno
   const r = resa();
-  // Taglia su quasi tutto il consumo annuo (con batteria); il tetto resta il limite fisico.
-  const kwpUtile = (consumo*CFG.DIMENS_BATTERIA)/r.perKwp;
-  // L'impianto è fatto di pannelli interi: arrotondo per eccesso, minimo PANNELLI_MIN.
+  // Taglia dalla tabella commerciale; il tetto resta il limite fisico.
+  const kwpTaglia = CFG.TAGLIE_IMPIANTO.find(t=>Math.round(consumo)<=t.fino).kwp;   // arrotondo: 3000,0000001 non deve saltare di taglia
+  // L'impianto è fatto di pannelli interi: il numero più vicino alla taglia (3 kWp → 6, 4 → 9, 6 → 13), minimo PANNELLI_MIN.
   // Il tetto è il limite assoluto, anche sopra il minimo: mai più pannelli di quelli che ci stanno.
   const panMin=CFG.PANNELLI_MIN;
-  const panServono=Math.max(panMin, Math.ceil(kwpUtile*1000/CFG.W_PANNELLO));
+  const panServono=Math.max(panMin, Math.round(kwpTaglia*1000/CFG.W_PANNELLO));
   S.pannelli = Math.min(S.panTetto, panServono);
   S.tettoLimita = panServono > S.panTetto;
   S.panServono = panServono;
@@ -629,7 +635,7 @@ function calcolaNumeri(){
   S.prodKwp = S.kwp*r.perKwp;
   S.mensili = r.mensili.map(v=>v*S.kwp);
   S.fonte = 'PVGIS-SARAH2 (Commissione Europea), resa misurata su questo territorio';
-  const auto = Math.min(S.prodKwp*CFG.AUTOCONSUMO_BATT, consumo);
+  const auto = Math.min(S.prodKwp*CFG.AUTOCONSUMO_BATT, consumo*CFG.INDIPENDENZA_MAX);
   const ecc  = Math.max(0, S.prodKwp-auto);
   const risp = auto*CFG.PREZZO_ENERGIA + ecc*CFG.PREZZO_IMMISSIONE;
   S.battKwh = CFG.BATT_TAGLIE.find(t=>Math.round(S.kwp*10)/10<=t.fino).kwh;
@@ -654,7 +660,7 @@ function mostra(){
   const note=[];
   if(S.tettoLimita) note.push('Sulla falda disegnata stanno '+S.pannelli+' pannelli: per i consumi di questa casa ne servirebbero '+
     S.panServono+'. Il risparmio mostrato è quello dei pannelli che ci stanno. Al sopralluogo si verifica se c\'è spazio su altre falde.');
-  if(qui/sud < CFG.SOGLIA_ESPOSIZIONE) note.push('Su questa esposizione il tetto rende il '+Math.round((1-qui/sud)*100)+'% in meno rispetto a una falda a sud. Per arrivare allo stesso risparmio serve un impianto più grande, quindi più costoso. Il conto esatto si fa al sopralluogo.');
+  if(qui/sud < CFG.SOGLIA_ESPOSIZIONE) note.push('Su questa esposizione il tetto produce il '+Math.round((1-qui/sud)*100)+'% in meno rispetto a una falda a sud. I numeri qui sopra ne tengono già conto. Il conto esatto si fa al sopralluogo.');
   S.nota = note.join(' ');
   $('#notaEsp').hidden = !S.nota; $('#notaEsp').textContent = S.nota;
   $('#fonte').textContent='Fonte della produzione: '+S.fonte+'. Stima indicativa: il valore esatto si determina con il sopralluogo.';
