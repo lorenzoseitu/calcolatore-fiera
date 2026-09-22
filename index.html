@@ -101,7 +101,14 @@ img{max-width:100%;display:block}
 .rosa svg{width:100%;height:100%;display:block}
 .map-hint{font-size:13px;color:var(--brown);margin-top:8px}
 .vtx{display:flex;align-items:center;justify-content:center;cursor:move}
-.vtx i{width:14px;height:14px;border-radius:50%;background:#E5B900;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.6)}
+.falde{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.falda-chip{display:flex;align-items:center;gap:8px;background:var(--cream-warm);border:1.5px solid var(--line);border-radius:999px;padding:8px 14px;font-family:var(--font);font-weight:700;font-size:14px;color:var(--ink);cursor:pointer}
+.falda-chip.on{border-color:var(--gold);background:#fff;box-shadow:0 0 0 1px var(--gold)}
+.falda-chip i{width:12px;height:12px;border-radius:50%;border:1px solid rgba(0,0,0,.35)}
+.falda-chip .x{color:var(--brown);font-weight:800;padding:0 2px}
+.add-falda{margin-top:14px}
+.add-falda small{display:block;font-size:13px;color:var(--brown);margin-top:6px}
+.vtx i{width:14px;height:14px;border-radius:50%;background:#E5B900;border:2px solid #3A3A3A;box-shadow:0 0 0 1.5px #fff,0 1px 4px rgba(0,0,0,.6)}
 
 /* ---------- Foglio A5 da stampare ---------- */
 /* Palette e regole da Grafica/dragondoro_graphic_style_guide.md: Grafite #3A3A3A, Oro #E5B900,
@@ -196,6 +203,7 @@ img{max-width:100%;display:block}
     <section id="s2" hidden>
       <h2 class="q-title">Il tetto</h2>
       <p class="q-hint">Clicca gli angoli della falda uno dopo l'altro, girandoci intorno. Se un punto è fuori posto, trascinalo.</p>
+      <div class="falde" id="falde" hidden></div>
       <div id="map"></div>
       <p class="map-hint">Il nord è sempre in alto: la falda che guarda verso il basso dello schermo è esposta a sud.</p>
       <div class="map-tools">
@@ -203,9 +211,9 @@ img{max-width:100%;display:block}
         <button class="btn-sec" id="resetPoly">Ricomincia il disegno</button>
       </div>
       <div class="map-stats">
-        <div class="stat" style="flex:0 0 160px"><b id="stArea">—</b><span>m² falda</span></div>
+        <div class="stat" style="flex:0 0 160px"><b id="stArea">—</b><span id="stAreaL">m² falda</span></div>
       </div>
-      <h3 class="sec-title">Verso dove guarda la falda?</h3>
+      <h3 class="sec-title" id="espTitle">Verso dove guarda la falda?</h3>
       <div class="compass" id="compass">
         <button data-a="0">Sud<small>ideale</small></button>
         <button data-a="-45">Sud-est<small>ottimo</small></button>
@@ -215,6 +223,10 @@ img{max-width:100%;display:block}
         <button data-a="-135">Nord-est<small>debole</small></button>
         <button data-a="135">Nord-ovest<small>debole</small></button>
         <button data-a="180">Nord<small>sconsigliato</small></button>
+      </div>
+      <div class="add-falda">
+        <button class="btn-sec" id="addFalda" disabled>+ Aggiungi un'altra falda</button>
+        <small>Per esempio est e ovest, quando su una falda sola non ci stanno abbastanza pannelli.</small>
       </div>
       <div class="nav"><button class="btn-ghost" data-back="1">Indietro</button><button class="btn" id="n2" disabled>Avanti</button></div>
     </section>
@@ -318,7 +330,7 @@ img{max-width:100%;display:block}
             <tr id="pConsRow"><td>Consumo stimato</td><td id="pCons">—</td></tr>
             <tr><td>Tipo di casa</td><td id="pTipo">—</td></tr>
             <tr><td>Batteria</td><td id="pBatt">—</td></tr>
-            <tr><td>Falda disegnata</td><td id="pArea">—</td></tr>
+            <tr><td id="pAreaL">Falda disegnata</td><td id="pArea">—</td></tr>
             <tr><td>Esposizione</td><td id="pEsp">—</td></tr>
           </table>
         </div>
@@ -414,6 +426,7 @@ const S = {step:1, lat:null, lon:null, addr:'', area:0, kwpTetto:0, aspect:null,
            tilt:15, spesa:null, tipo:'', prodKwp:null, mensili:null, fonte:''};
 
 const $ = s => document.querySelector(s);
+const ESPOSIZIONI={'0':'Sud','-45':'Sud-est','45':'Sud-ovest','-90':'Est','90':'Ovest','-135':'Nord-est','135':'Nord-ovest','180':'Nord'};
 // In it-IT Intl non mette il punto sui numeri a 4 cifre (1050): lo forzo, così 1.050 e 12.500 si leggono uguali
 const fmtN = (n,d=0) => new Intl.NumberFormat('it-IT',{maximumFractionDigits:d,useGrouping:'always'}).format(n)
   .replace(/^(\d)(\d{3})(?=,|$)/,'$1.$2');
@@ -480,8 +493,7 @@ async function geocode(magicKey){
     if(!c){$('#geoMsg').innerHTML='<div class="err">Indirizzo non trovato. Prova solo via e comune, poi sposta la mappa a mano.</div>';return}
     S.lat=c.location.y; S.lon=c.location.x;
     // Nuovo indirizzo, nuovo tetto: via la falda e l'esposizione del cliente precedente
-    azzeraDisegno(); S.aspect=null;
-    $('#compass').querySelectorAll('button').forEach(x=>x.classList.remove('selected'));
+    azzeraDisegno();
     const a=c.attributes||{};
     S.addr=[a.StAddr, a.City].filter(Boolean).join(', ') || c.address;
     // Senza civico preciso Esri mette il punto a metà via o al centro del paese: va detto
@@ -540,7 +552,10 @@ const Rosa=L.Control.extend({options:{position:'topright'},onAdd(){
 }});
 new Rosa().addTo(map);
 
-let pts=[], poly=null, markers=[];
+// Più falde (2026-09-22): un tetto a due falde, per esempio est e ovest, si disegna come due
+// poligoni, ognuno con la sua esposizione. I clic sulla mappa vanno sempre alla falda attiva.
+const MAX_FALDE=3, COLORI=['#E5B900','#F5F2E8','#7FD1FF'];
+let falde=[], att=0;
 function areaM2(latlngs){                       // formula dei trapezi su sferoide
   const R=6378137, n=latlngs.length; if(n<3) return 0;
   let a=0;
@@ -550,51 +565,87 @@ function areaM2(latlngs){                       // formula dei trapezi su sferoi
   }
   return Math.abs(a*R*R/2);
 }
+function nuovaFalda(){
+  falde.push({pts:[], markers:[], poly:null, aspect:null, area:0, pan:0, colore:COLORI[falde.length]});
+  att=falde.length-1;
+}
+const faldaOk = f => f.pan>=1 && f.aspect!==null;
+function disegna(f){
+  if(f.poly) map.removeLayer(f.poly);
+  f.poly=null;
+  const on = f===falde[att];
+  if(f.pts.length>1)
+    f.poly=L.polygon(f.pts,{color:f.colore,weight:on?3:2,fillOpacity:on?.35:.2,interactive:false}).addTo(map);
+  f.area = f.pts.length>2 ? areaM2(f.pts.map(p=>L.latLng(p[0],p[1]))) : 0;
+  f.pan  = Math.floor(f.area*CFG.FRAZIONE_UTILE/(CFG.PANNELLO_L*CFG.PANNELLO_H));   // pannelli interi che ci stanno
+}
 function redraw(){
-  if(poly) map.removeLayer(poly);
-  if(pts.length>1){
-    poly=L.polygon(pts,{color:'#E5B900',weight:3,fillOpacity:.35,interactive:false}).addTo(map);
-  }
-  const a=pts.length>2?areaM2(pts.map(p=>L.latLng(p[0],p[1]))):0;
-  S.area=a;
-  const utile=a*CFG.FRAZIONE_UTILE;
-  const pannelli=Math.floor(utile/(CFG.PANNELLO_L*CFG.PANNELLO_H));   // pannelli interi che ci stanno
-  S.panTetto=pannelli;
-  S.kwpTetto=pannelli*CFG.W_PANNELLO/1000;
-  $('#stArea').textContent = a?fmtN(a):'—';
+  falde.forEach(disegna);
+  S.area = falde.reduce((t,f)=>t+f.area,0);
+  S.panTetto = falde.filter(faldaOk).reduce((t,f)=>t+f.pan,0);
+  S.kwpTetto = S.panTetto*CFG.W_PANNELLO/1000;
   // Pannelli e kWp del tetto non si mostrano qui (Lorenzo, 2026-09-22): sono il massimo che ci sta,
   // non l'impianto consigliato, e vederli cambiare al risultato confondeva.
+  $('#stArea').textContent = S.area?fmtN(S.area):'—';
+  $('#stAreaL').textContent = falde.length>1 ? 'm² falde' : 'm² falda';
+  const multi=falde.length>1;
+  $('#falde').hidden=!multi;
+  $('#falde').innerHTML='';
+  if(multi) falde.forEach((f,i)=>{
+    const c=document.createElement('button'); c.type='button';
+    c.className='falda-chip'+(i===att?' on':'');
+    c.innerHTML='<i style="background:'+f.colore+'"></i>Falda '+(i+1)+' · '+(f.aspect!==null?ESPOSIZIONI[f.aspect]:'?')+
+      ' · '+(f.area?fmtN(f.area)+' m²':'da disegnare')+' <span class="x" title="Elimina questa falda">×</span>';
+    c.onclick=e=>{ if(e.target.classList.contains('x')) eliminaFalda(i); else attiva(i) };
+    $('#falde').appendChild(c);
+  });
+  $('#espTitle').textContent = multi ? 'Verso dove guarda la falda '+(att+1)+'?' : 'Verso dove guarda la falda?';
+  $('#compass').querySelectorAll('button').forEach(b=>b.classList.toggle('selected', falde[att].aspect===+b.dataset.a));
   checkStep2();
 }
 // Vertici trascinabili: un punto messo male si corregge senza rifare tutto.
 // Il clic su un vertice non arriva alla mappa, quindi non aggiunge punti per sbaglio.
-const icona=L.divIcon({className:'vtx',html:'<i></i>',iconSize:[26,26]});
 function aggiungiVertice(ll){
-  const i=pts.length;
-  pts.push([ll.lat,ll.lng]);
-  const m=L.marker(ll,{icon:icona,draggable:true,autoPan:true}).addTo(map);
-  m.on('drag',ev=>{const p=ev.target.getLatLng(); pts[i]=[p.lat,p.lng]; redraw()});
-  markers.push(m);
+  const f=falde[att], i=f.pts.length;
+  f.pts.push([ll.lat,ll.lng]);
+  const ic=L.divIcon({className:'vtx',html:'<i style="background:'+f.colore+'"></i>',iconSize:[26,26]});
+  const m=L.marker(ll,{icon:ic,draggable:true,autoPan:true}).addTo(map);
+  m.on('drag',ev=>{const p=ev.target.getLatLng(); f.pts[i]=[p.lat,p.lng]; redraw()});
+  f.markers.push(m);
   redraw();
 }
 map.on('click',e=>{
   // Un doppio clic veloce darebbe due punti sovrapposti: scarto quelli a meno di 6 px dall'ultimo
-  if(pts.length){
-    const u=map.latLngToContainerPoint(pts[pts.length-1]);
+  const P=falde[att].pts;
+  if(P.length){
+    const u=map.latLngToContainerPoint(P[P.length-1]);
     if(u.distanceTo(e.containerPoint)<6) return;
   }
   aggiungiVertice(e.latlng);
 });
-$('#undoPt').onclick=()=>{ if(!pts.length) return; pts.pop(); map.removeLayer(markers.pop()); redraw() };
-function azzeraDisegno(){ pts=[]; markers.forEach(m=>map.removeLayer(m)); markers=[]; if(poly) map.removeLayer(poly); poly=null; redraw() }
-$('#resetPoly').onclick=azzeraDisegno;
+function svuota(f){ f.markers.forEach(m=>map.removeLayer(m)); f.markers=[]; f.pts=[]; if(f.poly) map.removeLayer(f.poly); f.poly=null }
+$('#undoPt').onclick=()=>{ const f=falde[att]; if(!f.pts.length) return; f.pts.pop(); map.removeLayer(f.markers.pop()); redraw() };
+$('#resetPoly').onclick=()=>{ svuota(falde[att]); redraw() };
+function attiva(i){ att=i; redraw() }
+function eliminaFalda(i){
+  svuota(falde[i]); falde.splice(i,1);
+  if(!falde.length) nuovaFalda();
+  falde.forEach((f,k)=>{ f.colore=COLORI[k]; f.markers.forEach(m=>m.setIcon(L.divIcon({className:'vtx',html:'<i style="background:'+f.colore+'"></i>',iconSize:[26,26]}))) });
+  att=Math.min(att,falde.length-1); redraw();
+}
+// Nuovo indirizzo, nuovo tetto: via tutte le falde e le esposizioni del cliente precedente
+function azzeraDisegno(){ falde.forEach(svuota); falde=[]; nuovaFalda(); redraw() }
+$('#addFalda').onclick=()=>{ nuovaFalda(); redraw() };
+nuovaFalda();
 
-$('#compass').querySelectorAll('button').forEach(b=>b.onclick=()=>{
-  $('#compass').querySelectorAll('button').forEach(x=>x.classList.remove('selected'));
-  b.classList.add('selected'); S.aspect=+b.dataset.a; checkStep2();
-});
+$('#compass').querySelectorAll('button').forEach(b=>b.onclick=()=>{ falde[att].aspect=+b.dataset.a; redraw() });
 // Inclinazione tolta il 2026-09-22 (Lorenzo): si calcola tutto su falda a 15°.
-function checkStep2(){ $('#n2').disabled = !(S.panTetto>=1 && S.aspect!==null) }
+function checkStep2(){
+  // Le falde appena aggiunte e non ancora disegnate non contano; quelle iniziate devono essere complete
+  const iniziate=falde.filter(f=>f.pts.length);
+  $('#n2').disabled = !(iniziate.length && iniziate.every(faldaOk));
+  $('#addFalda').disabled = !(falde.length<MAX_FALDE && falde.every(faldaOk));
+}
 $('#n2').onclick=()=>{S.lat=map.getCenter().lat;S.lon=map.getCenter().lng;go(3)};
 
 /* ---------- step 3: fasce e tipo casa ---------- */
@@ -645,8 +696,8 @@ function checkStep3(){ $('#n3').disabled = !(S.consumoAnnuo && S.tipo) }
 $('#n3').onclick=calcola;
 
 /* ---------- calcolo ---------- */
-function resa(){
-  const k = S.aspect+'_'+S.tilt;
+function resa(aspect){
+  const k = aspect+'_'+S.tilt;
   return {perKwp: CFG.PVGIS_ANNO[k], mensili: CFG.PVGIS_MENSILE[k]};
 }
 function calcola(){
@@ -655,7 +706,6 @@ function calcola(){
 }
 function calcolaNumeri(){
   const consumo = S.consumoAnnuo;                                 // kWh/anno, da fascia o da bolletta
-  const r = resa();
   // Taglia dalla tabella commerciale; il tetto resta il limite fisico.
   const kwpTaglia = CFG.TAGLIE_IMPIANTO.find(t=>Math.round(consumo)<=t.fino).kwp;   // arrotondo: 3000,0000001 non deve saltare di taglia
   // L'impianto è fatto di pannelli interi: il numero più vicino alla taglia (3 kWp → 6, 4 → 9, 6 → 13), minimo PANNELLI_MIN.
@@ -666,8 +716,19 @@ function calcolaNumeri(){
   S.tettoLimita = panServono > S.panTetto;
   S.panServono = panServono;
   S.kwp = S.pannelli*CFG.W_PANNELLO/1000;
-  S.prodKwp = S.kwp*r.perKwp;
-  S.mensili = r.mensili.map(v=>v*S.kwp);
+  // Con più falde i pannelli vanno prima su quella che rende di più, poi sulle altre
+  let resto=S.pannelli;
+  S.ripartizione = falde.filter(faldaOk)
+    .map(f=>({aspect:f.aspect, pan:f.pan, r:resa(f.aspect)}))
+    .sort((x,y)=>y.r.perKwp-x.r.perKwp)
+    .map(f=>{ const n=Math.min(f.pan,resto); resto-=n; return {...f, n} })
+    .filter(f=>f.n>0);
+  S.prodKwp = 0; S.mensili = Array(12).fill(0);                   // prodKwp = produzione annua totale, kWh
+  S.ripartizione.forEach(f=>{
+    const kwp=f.n*CFG.W_PANNELLO/1000;
+    S.prodKwp += kwp*f.r.perKwp;
+    f.r.mensili.forEach((v,m)=>S.mensili[m]+=v*kwp);
+  });
   S.fonte = 'PVGIS-SARAH2 (Commissione Europea), resa misurata su questo territorio';
   const auto = Math.min(S.prodKwp*CFG.AUTOCONSUMO_BATT, consumo*CFG.INDIPENDENZA_MAX);
   const ecc  = Math.max(0, S.prodKwp-auto);
@@ -690,11 +751,12 @@ function mostra(){
   }
   const max=Math.max(...S.mensili);
   $('#chart').innerHTML=S.mensili.map(v=>`<div style="height:${Math.max(3,v/max*100)}%"></div>`).join('');
-  const sud=CFG.PVGIS_ANNO['0_'+S.tilt], qui=CFG.PVGIS_ANNO[S.aspect+'_'+S.tilt];
+  const sud=CFG.PVGIS_ANNO['0_'+S.tilt], qui=S.prodKwp/S.kwp;      // resa media dei pannelli, anche su più falde
+  const piuFalde=falde.filter(faldaOk).length>1, piuEsp=S.ripartizione.length>1;
   const note=[];
-  if(S.tettoLimita) note.push('Sulla falda disegnata stanno '+S.pannelli+' pannelli: per i consumi di questa casa ne servirebbero '+
+  if(S.tettoLimita) note.push((piuFalde?'Sulle falde disegnate stanno ':'Sulla falda disegnata stanno ')+S.pannelli+' pannelli: per i consumi di questa casa ne servirebbero '+
     S.panServono+'. Il risparmio mostrato è quello dei pannelli che ci stanno. Al sopralluogo si verifica se c\'è spazio su altre falde.');
-  if(qui/sud < CFG.SOGLIA_ESPOSIZIONE) note.push('Su questa esposizione il tetto produce il '+Math.round((1-qui/sud)*100)+'% in meno rispetto a una falda a sud. I numeri qui sopra ne tengono già conto. Il conto esatto si fa al sopralluogo.');
+  if(qui/sud < CFG.SOGLIA_ESPOSIZIONE) note.push((piuEsp?'Su queste esposizioni':'Su questa esposizione')+' il tetto produce il '+Math.round((1-qui/sud)*100)+'% in meno rispetto a una falda a sud. I numeri qui sopra ne tengono già conto. Il conto esatto si fa al sopralluogo.');
   S.nota = note.join(' ');
   $('#notaEsp').hidden = !S.nota; $('#notaEsp').textContent = S.nota;
   $('#fonte').textContent='Fonte della produzione: '+S.fonte+'. Stima indicativa: il valore esatto si determina con il sopralluogo.';
@@ -707,7 +769,6 @@ $('#n4').onclick=()=>go(5);
 ['cNome','cTel','cPriv'].forEach(id=>$('#'+id).addEventListener('input',()=>{
   $('#nPrint').disabled = !($('#cNome').value.trim() && $('#cTel').value.trim().length>=8 && $('#cPriv').checked);
 }));
-const ESPOSIZIONI={'0':'Sud','-45':'Sud-est','45':'Sud-ovest','-90':'Est','90':'Ovest','-135':'Nord-est','135':'Nord-ovest','180':'Nord'};
 function riempiFoglio(){
   const c=S.calc, lo=c.risp*(1-CFG.BANDA), hi=c.risp*(1+CFG.BANDA);
   $('#pNome').textContent=$('#cNome').value.trim();
@@ -727,8 +788,12 @@ function riempiFoglio(){
   $('#pCons').textContent=fmtN(c.consumo)+' kWh/anno';
   $('#pTipo').textContent=S.tipo||'—';
   $('#pBatt').textContent='Circa '+fmtN(S.battKwh,1)+' kWh';
-  $('#pArea').textContent=fmtN(S.area)+' m²';
-  $('#pEsp').textContent=ESPOSIZIONI[S.aspect]||'—';
+  const FO=falde.filter(faldaOk);
+  $('#pAreaL').textContent = FO.length>1 ? 'Falde disegnate' : 'Falda disegnata';
+  $('#pArea').textContent = FO.map(f=>fmtN(f.area)).join(' + ')+' m²';
+  $('#pEsp').textContent = S.ripartizione.length>1
+    ? S.ripartizione.map(f=>ESPOSIZIONI[f.aspect]+' ('+f.n+' pannelli)').join(' + ')
+    : (ESPOSIZIONI[(S.ripartizione[0]||{}).aspect]||'—');
   const max=Math.max(...S.mensili);
   $('#pChart').innerHTML=S.mensili.map(v=>`<div style="height:${Math.max(3,v/max*100)}%"></div>`).join('');
   $('#pNota').hidden = !S.nota; $('#pNota').textContent = S.nota;
@@ -743,7 +808,8 @@ $('#nPrint').onclick=()=>{
   // Il foglio a schermo è nascosto: lo rendo fuori vista, altrimenti Leaflet misura 0×0 e l'inquadratura salta
   const foglio=$('.print-sheet'); foglio.classList.add('preparo');
   slot.appendChild(m); m.style.height='100%'; map.invalidateSize();
-  if(poly) map.fitBounds(poly.getBounds(),{padding:[30,30],maxZoom:20,animate:false});
+  const P=falde.map(f=>f.poly).filter(Boolean);
+  if(P.length) map.fitBounds(L.featureGroup(P).getBounds(),{padding:[30,30],maxZoom:20,animate:false});
   setTimeout(()=>{   // tempo per caricare i tile alla nuova inquadratura
     window.print();
     foglio.classList.remove('preparo');
