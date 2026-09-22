@@ -70,7 +70,6 @@ img{max-width:100%;display:block}
 .compass button{background:var(--cream-warm);border:1.5px solid var(--line);border-radius:12px;padding:12px 6px;font-family:var(--font);font-weight:700;font-size:14px;cursor:pointer}
 .compass button.selected{border-color:var(--gold);background:#fff;box-shadow:0 0 0 1px var(--gold)}
 .compass button small{display:block;font-weight:500;font-size:11px;color:var(--brown)}
-.compass.due{grid-template-columns:1fr 1fr}
 
 .spin{width:40px;height:40px;border-radius:50%;border:4px solid var(--line);border-top-color:var(--gold);margin:40px auto 18px;animation:spin .9s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -227,11 +226,6 @@ img{max-width:100%;display:block}
       <div id="fasce"></div>
       <h3 class="sec-title">Che tipo di casa è?</h3>
       <div id="tipoCasa"></div>
-      <h3 class="sec-title">Impianto con o senza batteria?</h3>
-      <div class="compass due" id="batt">
-        <button data-b="0">Senza batteria<small>usa l'energia mentre la produce</small></button>
-        <button data-b="1">Con batteria<small>la conserva per la sera</small></button>
-      </div>
       <div class="nav"><button class="btn-ghost" data-back="2">Indietro</button><button class="btn" id="n3" disabled>Calcola</button></div>
     </section>
 
@@ -247,10 +241,6 @@ img{max-width:100%;display:block}
         <span>Risparmio stimato in bolletta</span>
         <b id="rRange">—</b>
         <small id="rSub">all'anno, su questa casa</small>
-      </div>
-      <div class="compass due no-print" id="battR" style="margin:0 0 12px">
-        <button data-b="0">Senza batteria</button>
-        <button data-b="1">Con batteria</button>
       </div>
       <div class="grid2">
         <div class="kpi"><b id="rKwp">—</b><span>Impianto consigliato</span></div>
@@ -372,13 +362,9 @@ img{max-width:100%;display:block}
 const CFG = {
   PREZZO_ENERGIA:      0.28,   // €/kWh pagati in bolletta, tutto compreso   TODO
   PREZZO_IMMISSIONE:   0.10,   // €/kWh riconosciuti sull'eccedenza          TODO
-  // Dimensionamento sull'autoconsumo (deciso il 2026-09-04): l'impianto si taglia sulla
-  // quota di consumo che cade nelle ore di sole, invece che sul fabbisogno annuo totale.
-  // Si evita di produrre energia che finisce in rete a 0,10 quando in bolletta vale 0,28.
-  FRAZIONE_DIURNA:     0.60,   // quota di consumo annuo copribile in diretta   TODO
-  AUTOCONSUMO_SU_PROD: 0.80,   // quota di produzione autoconsumata a questa taglia  TODO
-  // Con batteria (aggiunto il 2026-09-22): l'energia prodotta di giorno si sposta alla sera,
-  // quindi l'impianto si taglia su quasi tutto il consumo annuo invece che sulla quota diurna.
+  // Impianto sempre con batteria (Lorenzo, 2026-09-22): la versione senza batteria è stata tolta.
+  // L'energia prodotta di giorno si sposta alla sera, quindi l'impianto si taglia su quasi tutto
+  // il consumo annuo.
   DIMENS_BATTERIA:     0.90,   // produzione annua / consumo annuo, con batteria   TODO
   AUTOCONSUMO_BATT:    0.80,   // quota di produzione usata in casa, con batteria (Lorenzo, 2026-09-22: stima, si conferma sulla bolletta)
   // Taglie di batteria abbinate alla potenza dell'impianto (Lorenzo, 2026-09-22):
@@ -411,7 +397,7 @@ const CFG = {
 };
 
 const S = {step:1, lat:null, lon:null, addr:'', area:0, kwpTetto:0, aspect:null,
-           tilt:15, spesa:null, tipo:'', batt:null, prodKwp:null, mensili:null, fonte:''};
+           tilt:15, spesa:null, tipo:'', prodKwp:null, mensili:null, fonte:''};
 
 const $ = s => document.querySelector(s);
 // In it-IT Intl non mette il punto sui numeri a 4 cifre (1050): lo forzo, così 1.050 e 12.500 si leggono uguali
@@ -616,17 +602,7 @@ function radio(host, items, cb){
 }
 radio($('#fasce'),FASCE,it=>{S.spesa=it.v;S.spesaLabel=it.l;checkStep3()});
 radio($('#tipoCasa'),TIPI,it=>{S.tipo=it;checkStep3()});
-function scegliBatt(v){
-  S.batt=v;
-  ['#batt','#battR'].forEach(h=>$(h).querySelectorAll('button').forEach(b=>b.classList.toggle('selected',+b.dataset.b===v)));
-}
-$('#batt').querySelectorAll('button').forEach(b=>b.onclick=()=>{scegliBatt(+b.dataset.b);checkStep3()});
-// Sul risultato l'operatore passa da una versione all'altra davanti al cliente, senza tornare indietro
-$('#battR').querySelectorAll('button').forEach(b=>b.onclick=()=>{
-  if(+b.dataset.b===S.batt) return;
-  scegliBatt(+b.dataset.b); calcolaNumeri(); mostra();
-});
-function checkStep3(){ $('#n3').disabled = !(S.spesa && S.tipo && S.batt!==null) }
+function checkStep3(){ $('#n3').disabled = !(S.spesa && S.tipo) }
 $('#n3').onclick=calcola;
 
 /* ---------- calcolo ---------- */
@@ -641,11 +617,8 @@ function calcola(){
 function calcolaNumeri(){
   const consumo = (S.spesa*12)/CFG.PREZZO_ENERGIA;              // kWh/anno
   const r = resa();
-  // Senza batteria: taglia sull'autoconsumo, produzione pari alla quota di consumo copribile
-  // in diretta, non al fabbisogno annuo. Con batteria: taglia su quasi tutto il consumo.
-  // In entrambi i casi il tetto resta il limite fisico.
-  const quota = S.batt ? CFG.DIMENS_BATTERIA : CFG.FRAZIONE_DIURNA;
-  const kwpUtile = (consumo*quota)/r.perKwp;
+  // Taglia su quasi tutto il consumo annuo (con batteria); il tetto resta il limite fisico.
+  const kwpUtile = (consumo*CFG.DIMENS_BATTERIA)/r.perKwp;
   // L'impianto è fatto di pannelli interi: arrotondo per eccesso, minimo 2 kWp, massimo quelli che stanno sul tetto
   const panMin=Math.ceil(2000/CFG.W_PANNELLO);
   S.pannelli = Math.max(panMin, Math.min(S.panTetto, Math.ceil(kwpUtile*1000/CFG.W_PANNELLO)));
@@ -653,19 +626,17 @@ function calcolaNumeri(){
   S.prodKwp = S.kwp*r.perKwp;
   S.mensili = r.mensili.map(v=>v*S.kwp);
   S.fonte = 'PVGIS-SARAH2 (Commissione Europea), resa misurata su questo territorio';
-  const auto = Math.min(S.prodKwp*(S.batt ? CFG.AUTOCONSUMO_BATT : CFG.AUTOCONSUMO_SU_PROD), consumo);
+  const auto = Math.min(S.prodKwp*CFG.AUTOCONSUMO_BATT, consumo);
   const ecc  = Math.max(0, S.prodKwp-auto);
   const risp = auto*CFG.PREZZO_ENERGIA + ecc*CFG.PREZZO_IMMISSIONE;
-  S.battKwh = S.batt ? CFG.BATT_TAGLIE.find(t=>Math.round(S.kwp*10)/10<=t.fino).kwh : 0;
+  S.battKwh = CFG.BATT_TAGLIE.find(t=>Math.round(S.kwp*10)/10<=t.fino).kwh;
   S.calc = {consumo, auto, ecc, risp, cop:auto/consumo};
 }
 function mostra(){
   const c=S.calc, lo=c.risp*(1-CFG.BANDA), hi=c.risp*(1+CFG.BANDA);
   const range = fmtE(Math.round(lo/50)*50)+' – '+fmtE(Math.round(hi/50)*50);
   $('#rRange').textContent=range;
-  $('#rSub').textContent = S.batt
-    ? "all'anno, su questa casa, con batteria da circa "+fmtN(S.battKwh,1)+' kWh'
-    : "all'anno, su questa casa, senza batteria";
+  $('#rSub').textContent = "all'anno, su questa casa, con batteria da circa "+fmtN(S.battKwh,1)+' kWh';
   $('#rKwp').textContent=fmtN(S.kwp,1)+' kWp';
   $('#rProd').textContent=fmtN(S.prodKwp)+' kWh';
   $('#rCop').textContent=Math.round(c.cop*100)+'%';
@@ -707,7 +678,7 @@ function riempiFoglio(){
   $('#pSpesa').textContent=S.spesaLabel||'—';
   $('#pCons').textContent=fmtN(c.consumo)+' kWh/anno';
   $('#pTipo').textContent=S.tipo||'—';
-  $('#pBatt').textContent=S.batt ? 'Sì, circa '+fmtN(S.battKwh,1)+' kWh' : 'No';
+  $('#pBatt').textContent='Circa '+fmtN(S.battKwh,1)+' kWh';
   $('#pArea').textContent=fmtN(S.area)+' m²';
   $('#pEsp').textContent=ESPOSIZIONI[S.aspect]||'—';
   const max=Math.max(...S.mensili);
