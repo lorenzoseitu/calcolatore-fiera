@@ -373,7 +373,8 @@ const CFG = {
   PANNELLO_L:          1.76,   // m
   PANNELLO_H:          1.13,   // m
   FRAZIONE_UTILE:      0.75,   // quota di falda realmente sfruttabile       TODO
-  W_PANNELLO:          450,    // W per pannello                             TODO
+  PANNELLI_MIN:        6,      // impianto minimo: 6 pannelli = 2,82 kWp (Lorenzo, 2026-09-22)
+  W_PANNELLO:          470,    // W per pannello venduto da Dragondoro (Lorenzo, 2026-09-22)
   PERDITE_SISTEMA:     14,     // % perdite di sistema (PVGIS)               TODO
   COSTO_PER_KWP:       null,   // €/kWp — serve solo se MOSTRA_PAYBACK = true
   // Sotto questa quota della resa a sud, l'esposizione va segnalata: a parità di risparmio
@@ -617,9 +618,9 @@ function calcolaNumeri(){
   const r = resa();
   // Taglia su quasi tutto il consumo annuo (con batteria); il tetto resta il limite fisico.
   const kwpUtile = (consumo*CFG.DIMENS_BATTERIA)/r.perKwp;
-  // L'impianto è fatto di pannelli interi: arrotondo per eccesso, minimo 2 kWp.
+  // L'impianto è fatto di pannelli interi: arrotondo per eccesso, minimo PANNELLI_MIN.
   // Il tetto è il limite assoluto, anche sopra il minimo: mai più pannelli di quelli che ci stanno.
-  const panMin=Math.ceil(2000/CFG.W_PANNELLO);
+  const panMin=CFG.PANNELLI_MIN;
   const panServono=Math.max(panMin, Math.ceil(kwpUtile*1000/CFG.W_PANNELLO));
   S.pannelli = Math.min(S.panTetto, panServono);
   S.tettoLimita = panServono > S.panTetto;
