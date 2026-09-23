@@ -196,6 +196,8 @@ img{max-width:100%;display:block}
 .p-hero span{color:var(--o);font-size:7pt;font-weight:700;text-transform:uppercase;line-height:1.3}
 .p-hero b{color:#fff;font-size:19pt;font-weight:800;line-height:1;white-space:nowrap}
 .p-hero b small{font-size:8.5pt;font-weight:500;margin-left:1mm}
+.p-rientro{font-size:8pt;color:var(--g);padding:0 1mm}
+.p-rientro b{font-weight:800}
 .p-kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:2mm;flex:0 0 auto}
 .p-kpi div{background:#fff;border-radius:3mm;padding:2mm 3mm}
 .p-kpi b{display:block;font-size:12pt;font-weight:800;line-height:1.15}
@@ -328,7 +330,8 @@ img{max-width:100%;display:block}
         <div class="kpi"><b id="rCop">—</b><span>Indipendenza energetica</span></div>
         <div class="kpi"><b id="rEcc">—</b><span>In rete</span></div>
       </div>
-      <div id="paybackBox" hidden style="margin-top:10px"><div class="kpi"><b id="rPay">—</b><span>Tempo di rientro</span></div></div>
+      <div id="paybackBox" hidden style="margin-top:10px"><div class="kpi"><b id="rPay">—</b><span>Tempo di rientro stimato</span></div>
+        <p class="disclaimer" style="margin-top:6px">Stima indicativa, calcolata considerando la detrazione fiscale del 50% recuperata in 10 anni. Da approfondire al sopralluogo.</p></div>
 
       <h3 class="sec-title">Produzione mese per mese</h3>
       <div class="chart" id="chart"></div>
@@ -444,6 +447,7 @@ img{max-width:100%;display:block}
       </div>
       <div class="p-map" id="pMapSlot"></div>
       <div class="p-hero"><span>Risparmio stimato<br>in bolletta</span><b id="pRange">—</b></div>
+      <div class="p-rientro" id="pRientro" hidden>Tempo di rientro stimato: <b id="pPay">—</b> · stima indicativa con detrazione fiscale del 50% in 10 anni, da approfondire al sopralluogo</div>
       <div class="p-kpi">
         <div><b id="pKwp">—</b><span>Impianto consigliato</span></div>
         <div><b id="pPan">—</b><span>Pannelli</span></div>
@@ -537,17 +541,26 @@ const CFG = {
   PANNELLI_MIN:        6,      // impianto minimo: 6 pannelli = 2,82 kWp (Lorenzo, 2026-09-22)
   W_PANNELLO:          470,    // W per pannello venduto da Dragondoro (Lorenzo, 2026-09-22)
   PERDITE_SISTEMA:     14,     // % perdite di sistema (PVGIS)               TODO
-  COSTO_PER_KWP:       null,   // €/kWp — serve solo se MOSTRA_PAYBACK = true
   // Sotto questa quota della resa a sud, l'esposizione va segnalata al cliente.
   SOGLIA_ESPOSIZIONE:  0.90,
   BANDA:               0.15,   // ampiezza dell'intervallo mostrato (±15%)
   // Workflow GHL "Calcolatore fiera 2026", trigger Inbound Webhook (Lorenzo, 2026-09-23).
   // Alla stampa il foglio va anche in CRM: contatto, campi Fiera - ... e tag fiera-2026.
   WEBHOOK: 'https://services.leadconnectorhq.com/hooks/T6MmbT0wp7BOJaveBD1Q/webhook-trigger/fb5e0533-eb56-4df8-88ff-ea694d0291cc',
-  // Spento per decisione di Lorenzo del 2026-09-04: il piano dice di non mostrare
-  // l'investimento stimato, e il tempo di rientro lo renderebbe ricavabile
-  // (costo = rientro × risparmio). Non riaccendere senza una nuova decisione.
-  MOSTRA_PAYBACK:      false,
+  // Tempo di rientro: spento il 2026-09-04 perché renderebbe ricavabile il prezzo
+  // (costo = rientro × risparmio). Riacceso il 2026-09-23 (Lorenzo) solo come intervallo di
+  // anni interi, es. "6–8 anni", con la dicitura di stima da approfondire: il prezzo non si
+  // ricava con precisione. Si vede solo se c'è il prezzo della taglia in PREZZI_TAGLIA.
+  MOSTRA_PAYBACK:      true,
+  // Prezzo di vendita per taglia (kWp), batteria compresa (Lorenzo, 2026-09-23). Non va letto in
+  // chiaro nel sorgente: codificato (esadecimale XOR PK), serve solo al calcolo del rientro.
+  // Da 12 kWp in su il prezzo non c'è e il rientro non compare.
+  PREZZI_TAGLIA: {3:'6f1c', 4:'60c0', 6:'64d8', 8:'834', 10:'fcc'},
+  PK: 0x5A3C,
+  // Prezzi pieni. La detrazione del 50% rientra in 10 rate annuali (Lorenzo, 2026-09-23): negli
+  // anni 1-10 il cliente recupera ogni anno risparmio + 5% del prezzo, dall'11° solo il risparmio.
+  DETRAZIONE: 0.50,
+  ANNI_DETRAZIONE: 10,
   // Resa energetica: tabella generata da PVGIS-SARAH2 (Commissione Europea) il 2026-09-04
   // su Arezzo (43.4633, 11.8796), 1 kWp, perdite 14 per cento. Chiave azimut_inclinazione,
   // valori in kWh/kWp/anno. Lo scarto tra Arezzo, Subbiano, Montevarchi e Pontassieve
@@ -899,6 +912,23 @@ function calcolaNumeri(){
   S.battKwh = CFG.BATT_TAGLIE.find(t=>Math.round(S.kwp*10)/10<=t.fino).kwh;
   S.calc = {consumo, auto, ecc, risp, cop:auto/consumo};
 }
+// Intervallo di due anni intorno al rientro centrale (prezzo / risparmio medio), es. 7,2 → "6–8 anni".
+// Sulla forchetta ±15% del risparmio verrebbe largo 4-5 anni: troppo vago per il cliente.
+function rientro(){
+  if(!CFG.MOSTRA_PAYBACK || !S.kwp) return '';
+  const tagli=Object.keys(CFG.PREZZI_TAGLIA).map(Number);
+  const t=tagli.reduce((a,b)=>Math.abs(b-S.kwp)<Math.abs(a-S.kwp)?b:a);   // taglia più vicina (6,11 → 6)
+  const cod=CFG.PREZZI_TAGLIA[t];
+  if(!cod || Math.abs(t-S.kwp)>1.5) return '';        // nessun prezzo per questa taglia, o impianto troppo lontano da una taglia nota
+  let prezzo=parseInt(cod,16)^CFG.PK;             // prezzo pieno
+  if(S.tettoLimita) prezzo=prezzo*S.kwp/t;        // impianto fuori tabella perché il tetto è piccolo
+  const risp=S.calc.risp, rata=prezzo*CFG.DETRAZIONE/CFG.ANNI_DETRAZIONE, n=CFG.ANNI_DETRAZIONE;
+  const anni = prezzo <= n*(risp+rata)
+    ? prezzo/(risp+rata)                                        // rientra mentre la detrazione è ancora in corso
+    : n + (prezzo - n*(risp+rata))/risp;                        // finite le rate, resta solo il risparmio
+  const centro=Math.round(anni);
+  return Math.max(1,centro-1)+'–'+(centro+1)+' anni';
+}
 function mostra(){
   const c=S.calc, lo=c.risp*(1-CFG.BANDA), hi=c.risp*(1+CFG.BANDA);
   const range = fmtE(Math.round(lo/50)*50)+' – '+fmtE(Math.round(hi/50)*50);
@@ -908,10 +938,9 @@ function mostra(){
   $('#rProd').textContent=fmtN(S.prodKwp)+' kWh';
   $('#rCop').textContent=Math.round(c.cop*100)+'%';
   $('#rEcc').textContent=fmtN(c.ecc)+' kWh';
-  if(CFG.MOSTRA_PAYBACK && CFG.COSTO_PER_KWP){
-    $('#paybackBox').hidden=false;
-    $('#rPay').textContent=fmtN((CFG.COSTO_PER_KWP*S.kwp)/c.risp,1)+' anni';
-  }
+  S.rientro = rientro();
+  $('#paybackBox').hidden = !S.rientro;
+  if(S.rientro) $('#rPay').textContent=S.rientro;
   const max=Math.max(...S.mensili);
   $('#chart').innerHTML=S.mensili.map(v=>`<div style="height:${Math.max(3,v/max*100)}%"></div>`).join('');
   const sud=CFG.PVGIS_ANNO['0_'+S.tilt], qui=S.prodKwp/S.kwp;      // resa media dei pannelli, anche su più falde
@@ -952,6 +981,7 @@ function riempiFoglio(){
   $('#pAddr').textContent=S.addr||'—';
   $('#pData').textContent=new Date().toLocaleDateString('it-IT',{day:'numeric',month:'long',year:'numeric'});
   $('#pRange').innerHTML=fmtE(Math.round(lo/50)*50)+' – '+fmtE(Math.round(hi/50)*50)+'<small>l\'anno</small>';
+  $('#pRientro').hidden=!S.rientro; $('#pPay').textContent=S.rientro||'';
   $('#pKwp').textContent=fmtN(S.kwp,1)+' kWp';
   $('#pPan').textContent=S.pannelli+' da '+CFG.W_PANNELLO+' W';
   $('#pProd').textContent=fmtN(S.prodKwp)+' kWh';
@@ -1036,6 +1066,7 @@ function datiPerCrm(){
     risparmio_stimato:fmtE(lo)+' – '+fmtE(hi),
     risparmio_min:lo,
     risparmio_max:hi,
+    rientro_stimato:S.rientro||'',
     tetto_insufficiente:S.tettoLimita?'si':'no',
     nota:S.nota||''
   };
