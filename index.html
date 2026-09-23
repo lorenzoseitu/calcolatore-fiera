@@ -417,14 +417,11 @@ img{max-width:100%;display:block}
       <p class="q-hint">Le mandiamo su WhatsApp la foto del tetto con il calcolo, e le stampiamo il foglio adesso.</p>
       <input id="cNome" class="field" placeholder="Nome e cognome" style="margin-bottom:10px">
       <input id="cTel" class="field" placeholder="Cellulare" inputmode="tel" style="margin-bottom:10px">
-      <input id="cMail" class="field" placeholder="Email (facoltativa)" inputmode="email" style="margin-bottom:10px">
+      <input id="cMail" class="field" placeholder="Email" inputmode="email" style="margin-bottom:10px">
       <label style="display:flex;gap:10px;align-items:flex-start;font-size:13.5px;color:var(--brown);margin:6px 0 4px">
         <input type="checkbox" id="cPriv" style="margin-top:4px">
         <span>Ho letto l'informativa privacy esposta in postazione e acconsento a essere ricontattato da Dragondoro.</span>
       </label>
-      <div class="warn">
-        <b>Prima di chiudere:</b> fissa la Diagnosi Protezione Solare sull'agenda del bancone. Si esce con data e ora, oppure con un no.
-      </div>
       <div class="nav"><button class="btn-ghost" data-back="5">Indietro</button><button class="btn" id="nPrint" disabled>Stampa il foglio</button></div>
       <div id="crmMsg"></div>
     </section>
@@ -942,8 +939,11 @@ function adattaA4(){
 addEventListener('resize',()=>{ if(S.step===5) adattaA4() });
 
 /* ---------- contatti e stampa ---------- */
-['cNome','cTel','cPriv'].forEach(id=>$('#'+id).addEventListener('input',()=>{
-  $('#nPrint').disabled = !($('#cNome').value.trim() && $('#cTel').value.trim().length>=8 && $('#cPriv').checked);
+// Email obbligatoria dal 2026-09-23 (Lorenzo): serve per il follow-up dopo la fiera
+const emailOk = v => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(v.trim());   // deve reggere anche i domini a più livelli, es. .co.uk
+['cNome','cTel','cMail','cPriv'].forEach(id=>$('#'+id).addEventListener('input',()=>{
+  $('#nPrint').disabled = !($('#cNome').value.trim() && $('#cTel').value.trim().length>=8 &&
+                            emailOk($('#cMail').value) && $('#cPriv').checked);
 }));
 function riempiFoglio(){
   const chi=$('#a4').cloneNode(true); chi.removeAttribute('id'); chi.style.zoom='';
