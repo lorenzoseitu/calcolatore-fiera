@@ -969,7 +969,11 @@ $('#nPrint').onclick=()=>{
   const P=falde.map(f=>f.poly).filter(Boolean);
   if(P.length) map.fitBounds(L.featureGroup(P).getBounds(),{padding:[30,30],maxZoom:20,animate:false});
   setTimeout(()=>{   // tempo per caricare i tile alla nuova inquadratura
+    // Il browser propone il titolo della pagina come nome del PDF: ci metto il nome del contatto
+    const titolo=document.title, nome=$('#cNome').value.trim().replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ');
+    document.title='Dragondoro - Calcolo risparmio - '+nome;
     window.print();
+    document.title=titolo;
     foglio.classList.remove('preparo');
     holder.insertBefore(m, holder.firstChild); m.style.height=h||''; map.invalidateSize();
     map.setView(vista.c, vista.z, {animate:false});
