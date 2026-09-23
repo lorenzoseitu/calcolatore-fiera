@@ -243,13 +243,17 @@ img{max-width:100%;display:block}
     <!-- STEP 1 -->
     <section id="s1">
       <h2 class="q-title">Dove si trova la casa?</h2>
-      <p class="q-hint">Via, numero civico e comune. Serve per vedere il tetto dall'alto.</p>
+      <p class="q-hint">Via, numero civico, città e CAP. Serve per vedere il tetto dall'alto.</p>
       <div class="row">
         <div class="addr-box">
-          <input id="addr" class="field" placeholder="Es. Via Roma 12, Subbiano" autocomplete="off">
+          <input id="addr" class="field" placeholder="Via e numero civico" autocomplete="off">
           <div class="sugg" id="sugg" hidden></div>
         </div>
         <button class="btn" id="geoBtn" style="flex:0 0 auto">Cerca</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <input id="aCitta" class="field" placeholder="Città" autocomplete="off">
+        <input id="aCap" class="field" placeholder="CAP" inputmode="numeric" maxlength="5" style="flex:0 0 120px" autocomplete="off">
       </div>
       <div id="geoMsg"></div>
       <div class="nav"><span></span><button class="btn" id="n1" disabled>Avanti</button></div>
@@ -422,7 +426,7 @@ img{max-width:100%;display:block}
         <b>Prima di chiudere:</b> fissa la Diagnosi Protezione Solare sull'agenda del bancone. Si esce con data e ora, oppure con un no.
       </div>
       <div class="nav"><button class="btn-ghost" data-back="5">Indietro</button><button class="btn" id="nPrint" disabled>Stampa il foglio</button></div>
-      <p class="disclaimer">TODO: qui va l'embed del form GHL al posto dei campi qui sopra, come nella landing Gestione Garantita, così i dati entrano in CRM senza passaggi manuali.</p>
+      <div id="crmMsg"></div>
     </section>
 
   </div>
@@ -541,6 +545,9 @@ const CFG = {
   // Sotto questa quota della resa a sud, l'esposizione va segnalata al cliente.
   SOGLIA_ESPOSIZIONE:  0.90,
   BANDA:               0.15,   // ampiezza dell'intervallo mostrato (±15%)
+  // Workflow GHL "Calcolatore fiera 2026", trigger Inbound Webhook (Lorenzo, 2026-09-23).
+  // Alla stampa il foglio va anche in CRM: contatto, campi Fiera - ... e tag fiera-2026.
+  WEBHOOK: 'https://services.leadconnectorhq.com/hooks/T6MmbT0wp7BOJaveBD1Q/webhook-trigger/fb5e0533-eb56-4df8-88ff-ea694d0291cc',
   // Spento per decisione di Lorenzo del 2026-09-04: il piano dice di non mostrare
   // l'investimento stimato, e il tempo di rientro lo renderebbe ricavabile
   // (costo = rientro × risparmio). Non riaccendere senza una nuova decisione.
@@ -590,11 +597,16 @@ let suggT=null, suggN=0, suggOn=-1;
 function azzeraIndirizzo(){
   // Se la ricerca fallisce non deve restare in memoria l'indirizzo della persona precedente,
   // che poi finirebbe stampato sul suo foglio.
-  S.lat=null; S.lon=null; S.addr=''; $('#n1').disabled=true;
+  S.lat=null; S.lon=null; S.addr=''; S.via=''; S.citta=''; S.cap=''; S.provincia=''; S.regione='';
+  $('#n1').disabled=true;
 }
 function chiudiSugg(){ $('#sugg').hidden=true; $('#sugg').innerHTML=''; suggOn=-1 }
+// La ricerca mette insieme i tre campi: la via da sola è ambigua, città e CAP la disambiguano
+function indirizzoScritto(){
+  return [$('#addr').value.trim(), $('#aCap').value.trim(), $('#aCitta').value.trim()].filter(Boolean).join(', ');
+}
 async function suggerisci(){
-  const q=$('#addr').value.trim(), n=++suggN;
+  const q=indirizzoScritto(), n=++suggN;
   if(q.length<4){chiudiSugg();return}
   try{
     const r=await fetch(ESRI+'suggest?f=json&maxSuggestions=6'+VICINO+'&text='+encodeURIComponent(q));
@@ -607,20 +619,20 @@ async function suggerisci(){
       const b=document.createElement('button'); b.type='button';
       b.textContent=x.text.replace(/, ITA$/,'');
       b.onmousedown=e=>e.preventDefault();                         // non far perdere il focus al campo
-      b.onclick=()=>{ $('#addr').value=b.textContent; chiudiSugg(); geocode(x.magicKey) };
+      b.onclick=()=>{ chiudiSugg(); geocode(x.magicKey, x.text) };   // via, città e CAP li riempie la ricerca
       $('#sugg').appendChild(b);
     });
     $('#sugg').hidden=false;
   }catch(e){ chiudiSugg() }
 }
-async function geocode(magicKey){
-  const q=$('#addr').value.trim();
+async function geocode(magicKey, testo){
+  const q=testo || indirizzoScritto();
   chiudiSugg();
-  if(q.length<5){$('#geoMsg').innerHTML='<div class="err">Scrivi via, civico e comune.</div>';return}
+  if($('#addr').value.trim().length<4){$('#geoMsg').innerHTML='<div class="err">Scrivi almeno la via e il numero civico.</div>';return}
   azzeraIndirizzo();
   $('#geoMsg').innerHTML='<div class="warn">Cerco l\'indirizzo…</div>';
   try{
-    const u=ESRI+'findAddressCandidates?f=json&maxLocations=1&outFields=StAddr,City,Addr_type'+VICINO+
+    const u=ESRI+'findAddressCandidates?f=json&maxLocations=1&outFields=StAddr,City,Postal,Subregion,Region,Addr_type'+VICINO+
       '&singleLine='+encodeURIComponent(q)+(typeof magicKey==='string'?'&magicKey='+encodeURIComponent(magicKey):'');
     const j=await (await fetch(u)).json();
     const c=(j.candidates||[])[0];
@@ -629,7 +641,13 @@ async function geocode(magicKey){
     // Nuovo indirizzo, nuovo tetto: via la falda e l'esposizione del cliente precedente
     azzeraDisegno();
     const a=c.attributes||{};
-    S.addr=[a.StAddr, a.City].filter(Boolean).join(', ') || c.address;
+    // Indirizzo spezzato per il CRM (2026-09-23): via, città, CAP e provincia in campi separati
+    S.via=a.StAddr||''; S.citta=a.City||''; S.cap=a.Postal||''; S.provincia=a.Subregion||''; S.regione=a.Region||'';
+    S.addr=[S.via, S.citta].filter(Boolean).join(', ') || c.address;
+    // I tre campi mostrano quello che è stato trovato davvero, e restano correggibili a mano
+    if(S.via) $('#addr').value=S.via;
+    if(S.citta) $('#aCitta').value=S.citta;
+    if(S.cap) $('#aCap').value=S.cap;
     // Senza civico preciso Esri mette il punto a metà via o al centro del paese: va detto
     const preciso = a.Addr_type==='PointAddress' || a.Addr_type==='Subaddress';
     $('#geoMsg').innerHTML='<div class="warn">Trovato: <b>'+S.addr+'</b>'+
@@ -645,6 +663,8 @@ async function geocode(magicKey){
 }
 $('#geoBtn').onclick=()=>geocode();
 $('#addr').addEventListener('input',()=>{ azzeraIndirizzo(); $('#geoMsg').innerHTML=''; clearTimeout(suggT); suggT=setTimeout(suggerisci,250) });
+['aCitta','aCap'].forEach(id=>$('#'+id).addEventListener('input',()=>{ azzeraIndirizzo(); $('#geoMsg').innerHTML='' }));
+['aCitta','aCap'].forEach(id=>$('#'+id).addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); geocode() } }));
 $('#addr').addEventListener('blur',()=>setTimeout(chiudiSugg,150));
 $('#addr').addEventListener('keydown',e=>{
   const B=[...$('#sugg').querySelectorAll('button')];
@@ -958,7 +978,75 @@ function riempiFoglio(){
   $('#pFoot').innerHTML='<b>Stima indicativa, non è un preventivo.</b> Produzione da '+S.fonte+
     '. '+((S.input||{}).modo==='kwh'?'Consumo preso dalla bolletta.':'Consumo ricavato dalla spesa dichiarata.')+' Il valore esatto si determina con il sopralluogo.';
 }
+/* ---------- invio a GHL ----------
+   In fiera la rete può mancare: le schede restano in coda nel browser della postazione e
+   partono appena torna. La stampa del foglio non dipende mai dall'invio. */
+const CODA='calcfiera-coda';
+// Se il browser blocca la memoria locale (finestra anonima, pagina aperta da file) la coda resta
+// in memoria: si perde chiudendo la pagina, ma le schede non spariscono in silenzio mentre è aperta.
+let codaMem=[];
+const leggiCoda = () => { try{ return JSON.parse(localStorage.getItem(CODA)||'[]') }catch(e){ return codaMem } };
+const scriviCoda = q => { codaMem=q; try{ localStorage.setItem(CODA, JSON.stringify(q)) }catch(e){} };
+function statoCoda(){
+  const n=leggiCoda().length;
+  $('#crmMsg').innerHTML = n ? '<div class="warn">'+n+(n===1?' scheda non ancora arrivata in CRM: riparte appena torna la rete.'
+                                                      :' schede non ancora arrivate in CRM: ripartono appena torna la rete.')+'</div>' : '';
+}
+let inviando=false;
+async function inviaCoda(){
+  if(inviando || !CFG.WEBHOOK) return;
+  inviando=true;
+  let q=leggiCoda();
+  while(q.length){
+    try{
+      const r=await fetch(CFG.WEBHOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(q[0])});
+      if(!r.ok) break;
+    }catch(e){ break }                                   // rete assente: si riprova dopo
+    q.shift(); scriviCoda(q);
+  }
+  inviando=false; statoCoda();
+}
+function datiPerCrm(){
+  const c=S.calc, I=S.input||{}, FO=falde.filter(faldaOk);
+  const lo=Math.round(c.risp*(1-CFG.BANDA)/50)*50, hi=Math.round(c.risp*(1+CFG.BANDA)/50)*50;
+  return {
+    fonte:'calcolatore-fiera-2026',
+    data_calcolo:new Date().toISOString(),
+    nome:$('#cNome').value.trim(),
+    telefono:$('#cTel').value.trim(),
+    email:$('#cMail').value.trim(),
+    consenso_privacy:$('#cPriv').checked?'si':'no',
+    indirizzo:S.addr||'',
+    via:S.via||S.addr||'',
+    citta:($('#aCitta').value.trim()||S.citta||''),
+    cap:($('#aCap').value.trim()||S.cap||''),
+    provincia:S.provincia||'',
+    regione:S.regione||'',
+    tipo_casa:S.tipo||'',
+    consumo_annuo_kwh:Math.round(c.consumo),
+    dato_di_partenza: I.modo==='kwh' ? 'bolletta '+fmtN(I.valore)+' kWh'
+                    : I.modo==='euro' ? 'bolletta '+fmtE(I.valore)+' all\'anno'
+                    : 'fascia '+(I.label||''),
+    mq_falde:FO.map(f=>Math.round(f.area)).join(' + '),
+    esposizione:S.ripartizione.map(f=>ESPOSIZIONI[f.aspect]+' ('+f.n+')').join(' + '),
+    pannelli:S.pannelli,
+    kwp:+S.kwp.toFixed(2),
+    batteria_kwh:S.battKwh,
+    produzione_annua_kwh:Math.round(S.prodKwp),
+    indipendenza_pct:Math.round(c.cop*100),
+    risparmio_stimato:fmtE(lo)+' – '+fmtE(hi),
+    risparmio_min:lo,
+    risparmio_max:hi,
+    tetto_insufficiente:S.tettoLimita?'si':'no',
+    nota:S.nota||''
+  };
+}
+window.addEventListener('online', inviaCoda);
+setInterval(inviaCoda, 60000);
+inviaCoda();
+
 $('#nPrint').onclick=()=>{
+  const q=leggiCoda(); q.push(datiPerCrm()); scriviCoda(q); statoCoda(); inviaCoda();
   riempiFoglio();
   // sposto la mappa dentro il foglio e la inquadro sulla falda, stampo, poi la rimetto dov'era
   const slot=$('#pMapSlot'), holder=$('#map').parentNode, m=$('#map'), h=m.style.height;
