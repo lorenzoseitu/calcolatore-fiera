@@ -167,6 +167,11 @@ img{max-width:100%;display:block}
    Avorio #F5F2E8, solo Supreme, logo giallo solo su Grafite, angoli sempre stondati */
 .print-sheet{display:none}
 .print-sheet.preparo{display:block;position:fixed;left:-200mm;top:0}
+.print-sheet.preparo.foto{left:0;z-index:9998}
+.print-sheet.foto .leaflet-control-zoom{display:none}
+.print-sheet.foto .leaflet-control-attribution{font-size:6px;background:rgba(255,255,255,.7)}
+.velo-pdf{position:fixed;inset:0;z-index:9999;background:var(--cream,#F5F2E8);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;font-family:var(--font);font-weight:700;color:#3A3A3A}
+.velo-pdf[hidden]{display:none}
 @media print{
   .print-sheet.preparo{position:static}
   /* Documento in A4 (2026-09-23): dentro c'è il foglio "Chi siamo", che è A4. Le due pagine nate A5
@@ -434,6 +439,7 @@ img{max-width:100%;display:block}
 
 
 <!-- ============ FOGLIO A5 ============ -->
+<div class="velo-pdf no-print" id="veloPdf" hidden><div class="spin"></div>Preparo il PDF del foglio…</div>
 <div class="print-sheet">
   <div class="page">
     <div class="p-band">
@@ -547,6 +553,9 @@ const CFG = {
   // Workflow GHL "Calcolatore fiera 2026", trigger Inbound Webhook (Lorenzo, 2026-09-23).
   // Alla stampa il foglio va anche in CRM: contatto, campi Fiera - ... e tag fiera-2026.
   WEBHOOK: 'https://services.leadconnectorhq.com/hooks/T6MmbT0wp7BOJaveBD1Q/webhook-trigger/fb5e0533-eb56-4df8-88ff-ea694d0291cc',
+  // Scenario Make (Lorenzo, 2026-09-25): riceve il PDF A4 del foglio e lo salva su Drive.
+  // È un invio in più: i dati continuano ad andare a GHL dal WEBHOOK qui sopra.
+  WEBHOOK_PDF: 'https://hook.eu2.make.com/6wgbv6y52enfeex1gfx45xudf86a0gvv',
   // Tempo di rientro: spento il 2026-09-04 perché renderebbe ricavabile il prezzo
   // (costo = rientro × risparmio). Riacceso il 2026-09-23 (Lorenzo) solo come intervallo di
   // anni interi, es. "6–8 anni", con la dicitura di stima da approfondire: il prezzo non si
@@ -691,9 +700,9 @@ $('#n1').onclick=()=>go(2);
 /* ---------- step 2: mappa e disegno ---------- */
 // Niente zoom al doppio clic: prima il doppio clic "per chiudere" zoomava a 21 e sgranava la foto.
 // Le foto Esri arrivano a 19, a 20 sono ancora leggibili, oltre solo pixel ingranditi.
-const map=L.map('map',{center:[43.4633,11.8796],zoom:16,maxZoom:20,doubleClickZoom:false});
+const map=L.map('map',{center:[43.4633,11.8796],zoom:16,maxZoom:20,doubleClickZoom:false,preferCanvas:true});
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-  {maxZoom:20,maxNativeZoom:19,attribution:'Esri, Maxar, Earthstar Geographics'}).addTo(map);
+  {maxZoom:20,maxNativeZoom:19,crossOrigin:'anonymous',attribution:'Esri, Maxar, Earthstar Geographics'}).addTo(map);   // crossOrigin: senza, la foto del tetto non si può copiare nel PDF
 
 // Bussola fissa: Leaflet non ruota la mappa, quindi il nord resta in alto e basta un controllo statico
 const Rosa=L.Control.extend({options:{position:'topright'},onAdd(){
@@ -1016,8 +1025,9 @@ const CODA='calcfiera-coda';
 let codaMem=[];
 const leggiCoda = () => { try{ return JSON.parse(localStorage.getItem(CODA)||'[]') }catch(e){ return codaMem } };
 const scriviCoda = q => { codaMem=q; try{ localStorage.setItem(CODA, JSON.stringify(q)) }catch(e){} };
+let pdfInAttesa=0;                                   // PDF in coda per Make, aggiornato da inviaPdf()
 function statoCoda(){
-  const n=leggiCoda().length;
+  const n=leggiCoda().length+pdfInAttesa;
   $('#crmMsg').innerHTML = n ? '<div class="warn">'+n+(n===1?' scheda non ancora arrivata in CRM: riparte appena torna la rete.'
                                                       :' schede non ancora arrivate in CRM: ripartono appena torna la rete.')+'</div>' : '';
 }
@@ -1075,6 +1085,75 @@ window.addEventListener('online', inviaCoda);
 setInterval(inviaCoda, 60000);
 inviaCoda();
 
+/* ---------- PDF A4 su Drive, via Make ----------
+   Stesse 3 pagine della stampa, fotografate con html2canvas e messe in un PDF A4 con jsPDF.
+   Le librerie si caricano all'apertura della pagina, così in fiera ci sono anche se poi la rete cade. */
+function caricaScript(src){ return new Promise((ok,ko)=>{ const t=document.createElement('script'); t.src=src; t.onload=ok; t.onerror=ko; document.head.appendChild(t) }) }
+const libPdf = Promise.all([
+  caricaScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'),
+  caricaScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')
+]).catch(()=>null);
+async function generaPdf(){
+  if(!(await libPdf) || !window.html2canvas || !window.jspdf) return null;
+  const pagine=[...document.querySelectorAll('.print-sheet > .page, .print-sheet .a4-slot > .a4')];
+  const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4',compress:true});
+  for(let i=0;i<pagine.length;i++){
+    const el=pagine[i];
+    // le pagine A5 si ingrandiscono come in stampa: stessa risoluzione finale (~190 dpi) per tutte
+    const scala = el.classList.contains('page') ? 2.83 : 2;
+    const c=await html2canvas(el,{scale:scala,useCORS:true,backgroundColor:'#F5F2E8',logging:false});
+    if(i) doc.addPage();
+    doc.addImage(c.toDataURL('image/jpeg',0.82),'JPEG',0,0,210,297);
+  }
+  return doc.output('blob');
+}
+// Coda dei PDF in IndexedDB; se il browser non la concede, resta in memoria finché la pagina è aperta
+let codaPdfMem=[];
+function dbPdf(){ return new Promise((ok,ko)=>{ const r=indexedDB.open('calcfiera',1);
+  r.onupgradeneeded=()=>r.result.createObjectStore('pdf',{autoIncrement:true}); r.onsuccess=()=>ok(r.result); r.onerror=()=>ko(r.error) }) }
+async function pdfInCoda(v){ try{ const db=await dbPdf(); await new Promise((ok,ko)=>{ const t=db.transaction('pdf','readwrite'); t.objectStore('pdf').add(v); t.oncomplete=ok; t.onerror=()=>ko(t.error) }) }catch(e){ codaPdfMem.push(v) } }
+async function pdfDaInviare(){ try{ const db=await dbPdf(); return await new Promise((ok,ko)=>{ const out=[], cur=db.transaction('pdf').objectStore('pdf').openCursor();
+  cur.onsuccess=()=>{ const c=cur.result; if(c){ out.push({k:c.key,v:c.value}); c.continue() } else ok(out) }; cur.onerror=()=>ko(cur.error) }) }catch(e){ return codaPdfMem.map((v,i)=>({k:'m'+i,v})) } }
+async function pdfTogli(k){ if(String(k).startsWith('m')){ codaPdfMem.shift(); return } const db=await dbPdf(); db.transaction('pdf','readwrite').objectStore('pdf').delete(k) }
+let inviandoPdf=false;
+async function inviaPdf(){
+  if(inviandoPdf || !CFG.WEBHOOK_PDF) return;
+  inviandoPdf=true;
+  const lista=await pdfDaInviare();
+  for(const {k,v} of lista){
+    const f=new FormData();
+    Object.entries(v.dati).forEach(([a,b])=>f.append(a,b));
+    f.append('pdf', v.blob, v.dati.nome_file);
+    try{ const r=await fetch(CFG.WEBHOOK_PDF,{method:'POST',body:f}); if(!r.ok) break }catch(e){ break }
+    await pdfTogli(k);
+  }
+  pdfInAttesa=(await pdfDaInviare()).length;
+  inviandoPdf=false; statoCoda();
+}
+window.addEventListener('online', inviaPdf);
+setInterval(inviaPdf, 60000);
+inviaPdf();
+function datiPerPdf(){
+  const d=datiPerCrm();
+  const giorno=new Date().toISOString().slice(0,10);
+  const pulito=t=>(t||'').replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim();
+  return {
+    nome:d.nome, telefono:d.telefono, email:d.email,
+    via:d.via, citta:d.citta, cap:d.cap, indirizzo:d.indirizzo,
+    data_calcolo:d.data_calcolo,
+    nome_file: giorno+' '+pulito(d.nome)+(d.indirizzo?' - '+pulito(d.indirizzo):'')+'.pdf'
+  };
+}
+
+// Con rientro, due falde e due avvisi il contenuto della prima pagina non ci sta (fino a ~15 mm di
+// troppo, e l'avviso finiva sopra la nota a piè di pagina). Cede la mappa: 54 mm quando c'è posto,
+// più bassa quando serve, mai sotto 34 mm. Va misurato con il foglio in 'preparo', cioè visibile.
+function adattaFoglio(){
+  const mappa=$('#pMapSlot'), body=mappa.closest('.p-body');
+  mappa.style.height='';
+  const px=mappa.getBoundingClientRect().height, troppo=body.scrollHeight-body.clientHeight;
+  if(troppo>0) mappa.style.height=Math.max(34*3.7795, px-troppo-4)+'px';
+}
 $('#nPrint').onclick=()=>{
   const q=leggiCoda(); q.push(datiPerCrm()); scriviCoda(q); statoCoda(); inviaCoda();
   riempiFoglio();
@@ -1083,15 +1162,24 @@ $('#nPrint').onclick=()=>{
   const vista={c:map.getCenter(), z:map.getZoom()};
   // Il foglio a schermo è nascosto: lo rendo fuori vista, altrimenti Leaflet misura 0×0 e l'inquadratura salta
   const foglio=$('.print-sheet'); foglio.classList.add('preparo');
+  adattaFoglio();
   slot.appendChild(m); m.style.height='100%'; map.invalidateSize();
   const P=falde.map(f=>f.poly).filter(Boolean);
   if(P.length) map.fitBounds(L.featureGroup(P).getBounds(),{padding:[30,30],maxZoom:20,animate:false});
-  setTimeout(()=>{   // tempo per caricare i tile alla nuova inquadratura
+  setTimeout(async ()=>{   // tempo per caricare i tile alla nuova inquadratura
     // Il browser propone il titolo della pagina come nome del PDF: ci metto il nome del contatto
     const titolo=document.title, nome=$('#cNome').value.trim().replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ');
     document.title='Dragondoro - Calcolo risparmio - '+nome;
     window.print();
     document.title=titolo;
+    // PDF A4 per Drive: il foglio è ancora pronto con la mappa inquadrata. Un velo copre lo schermo
+    // mentre lo si fotografa; se qualcosa va storto la stampa è già fatta e non si perde niente.
+    $('#veloPdf').hidden=false; foglio.classList.add('foto');
+    try{
+      const blob=await generaPdf();
+      if(blob){ await pdfInCoda({dati:datiPerPdf(), blob}); inviaPdf() }
+    }catch(e){ console.error('PDF non generato', e) }
+    foglio.classList.remove('foto'); $('#veloPdf').hidden=true;
     foglio.classList.remove('preparo');
     holder.insertBefore(m, holder.firstChild); m.style.height=h||''; map.invalidateSize();
     map.setView(vista.c, vista.z, {animate:false});
