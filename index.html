@@ -1031,18 +1031,29 @@ function statoCoda(){
   $('#crmMsg').innerHTML = n ? '<div class="warn">'+n+(n===1?' scheda non ancora arrivata in CRM: riparte appena torna la rete.'
                                                       :' schede non ancora arrivate in CRM: ripartono appena torna la rete.')+'</div>' : '';
 }
-let inviando=false;
+// Se arriva una scheda mentre un invio è in corso non si aspetta il giro dopo: si rifà subito il ciclo.
+// Prima la scheda nuova restava ferma (e si inviava solo alla riapertura della pagina), o peggio
+// veniva cancellata riscrivendo la coda vecchia.
+let inviando=false, ancoraCoda=false;
 async function inviaCoda(){
-  if(inviando || !CFG.WEBHOOK) return;
+  if(!CFG.WEBHOOK) return;
+  if(inviando){ ancoraCoda=true; return }
   inviando=true;
-  let q=leggiCoda();
-  while(q.length){
-    try{
-      const r=await fetch(CFG.WEBHOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(q[0])});
-      if(!r.ok) break;
-    }catch(e){ break }                                   // rete assente: si riprova dopo
-    q.shift(); scriviCoda(q);
-  }
+  do{
+    ancoraCoda=false;
+    let q;
+    while((q=leggiCoda()).length){                       // rilette ogni volta: dentro può esserci una scheda nuova
+      const {_id, ...dati}=q[0];
+      try{
+        const r=await fetch(CFG.WEBHOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(dati)});
+        if(!r.ok) break;
+      }catch(e){ break }                                 // rete assente: si riprova dopo
+      // tolgo solo la scheda appena inviata (per id; le schede vecchie senza id per contenuto)
+      const resto=leggiCoda(), i=resto.findIndex(x=> _id ? x._id===_id : JSON.stringify(x)===JSON.stringify(q[0]));
+      if(i>=0) resto.splice(i,1);
+      scriviCoda(resto);
+    }
+  }while(ancoraCoda && navigator.onLine!==false);
   inviando=false; statoCoda();
 }
 function datiPerCrm(){
@@ -1086,11 +1097,13 @@ setInterval(inviaCoda, 60000);
 inviaCoda();
 
 /* ---------- PDF A4 su Drive, via Make ----------
-   Stesse 3 pagine della stampa, fotografate con html2canvas e messe in un PDF A4 con jsPDF.
+   Stesse 3 pagine della stampa, fotografate con html2canvas-pro e messe in un PDF A4 con jsPDF.
    Le librerie si caricano all'apertura della pagina, così in fiera ci sono anche se poi la rete cade. */
 function caricaScript(src){ return new Promise((ok,ko)=>{ const t=document.createElement('script'); t.src=src; t.onload=ok; t.onerror=ko; document.head.appendChild(t) }) }
 const libPdf = Promise.all([
-  caricaScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'),
+  // html2canvas-pro e non html2canvas 1.4: con il font Supreme l'originale disegnava il testo più in basso
+  // del dovuto (etichette sul bordo dei riquadri, numeri in fondo ai cerchi). Segnalato da Lorenzo il 25/09.
+  caricaScript('https://cdn.jsdelivr.net/npm/html2canvas-pro@1.5.8/dist/html2canvas-pro.min.js'),
   caricaScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')
 ]).catch(()=>null);
 async function generaPdf(){
@@ -1114,19 +1127,25 @@ function dbPdf(){ return new Promise((ok,ko)=>{ const r=indexedDB.open('calcfier
 async function pdfInCoda(v){ try{ const db=await dbPdf(); await new Promise((ok,ko)=>{ const t=db.transaction('pdf','readwrite'); t.objectStore('pdf').add(v); t.oncomplete=ok; t.onerror=()=>ko(t.error) }) }catch(e){ codaPdfMem.push(v) } }
 async function pdfDaInviare(){ try{ const db=await dbPdf(); return await new Promise((ok,ko)=>{ const out=[], cur=db.transaction('pdf').objectStore('pdf').openCursor();
   cur.onsuccess=()=>{ const c=cur.result; if(c){ out.push({k:c.key,v:c.value}); c.continue() } else ok(out) }; cur.onerror=()=>ko(cur.error) }) }catch(e){ return codaPdfMem.map((v,i)=>({k:'m'+i,v})) } }
-async function pdfTogli(k){ if(String(k).startsWith('m')){ codaPdfMem.shift(); return } const db=await dbPdf(); db.transaction('pdf','readwrite').objectStore('pdf').delete(k) }
-let inviandoPdf=false;
+async function pdfTogli(k){ if(String(k).startsWith('m')){ codaPdfMem.shift(); return } const db=await dbPdf();
+  await new Promise((ok,ko)=>{ const t=db.transaction('pdf','readwrite'); t.objectStore('pdf').delete(k); t.oncomplete=ok; t.onerror=()=>ko(t.error) }) }
+let inviandoPdf=false, ancoraPdf=false;
 async function inviaPdf(){
-  if(inviandoPdf || !CFG.WEBHOOK_PDF) return;
+  if(!CFG.WEBHOOK_PDF) return;
+  if(inviandoPdf){ ancoraPdf=true; return }            // un PDF nuovo arrivato durante l'invio: si rifà il giro
   inviandoPdf=true;
-  const lista=await pdfDaInviare();
-  for(const {k,v} of lista){
-    const f=new FormData();
-    Object.entries(v.dati).forEach(([a,b])=>f.append(a,b));
-    f.append('pdf', v.blob, v.dati.nome_file);
-    try{ const r=await fetch(CFG.WEBHOOK_PDF,{method:'POST',body:f}); if(!r.ok) break }catch(e){ break }
-    await pdfTogli(k);
-  }
+  do{
+    ancoraPdf=false;
+    for(const {k,v} of await pdfDaInviare()){
+      const f=new FormData();
+      Object.entries(v.dati).forEach(([a,b])=>f.append(a,b));
+      f.append('pdf', v.blob, v.dati.nome_file);
+      let ok=false;
+      try{ const r=await fetch(CFG.WEBHOOK_PDF,{method:'POST',body:f}); ok=r.ok }catch(e){}
+      if(!ok){ ancoraPdf=false; break }                 // rete assente: si riprova dopo
+      await pdfTogli(k);
+    }
+  }while(ancoraPdf);
   pdfInAttesa=(await pdfDaInviare()).length;
   inviandoPdf=false; statoCoda();
 }
@@ -1155,7 +1174,7 @@ function adattaFoglio(){
   if(troppo>0) mappa.style.height=Math.max(34*3.7795, px-troppo-4)+'px';
 }
 $('#nPrint').onclick=()=>{
-  const q=leggiCoda(); q.push(datiPerCrm()); scriviCoda(q); statoCoda(); inviaCoda();
+  const q=leggiCoda(); q.push({...datiPerCrm(), _id:Date.now()+'-'+Math.random().toString(36).slice(2)}); scriviCoda(q); statoCoda(); inviaCoda();
   riempiFoglio();
   // sposto la mappa dentro il foglio e la inquadro sulla falda, stampo, poi la rimetto dov'era
   const slot=$('#pMapSlot'), holder=$('#map').parentNode, m=$('#map'), h=m.style.height;
