@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Non indicizzare (2026-09-25): il robots.txt nella cartella del repo non vale, Google legge solo quello alla radice del dominio -->
+<meta name="robots" content="noindex, nofollow, noarchive">
 <title>Calcolatore Fiera 2026 · Dragondoro</title>
 <link rel="icon" href="https://storage.googleapis.com/msgsndr/T6MmbT0wp7BOJaveBD1Q/media/68cd2f112539067afa118290.png">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -439,7 +441,7 @@ img{max-width:100%;display:block}
 
 
 <!-- ============ FOGLIO A5 ============ -->
-<div class="velo-pdf no-print" id="veloPdf" hidden><div class="spin"></div>Preparo il PDF del foglio…</div>
+<div class="velo-pdf no-print" id="veloPdf" hidden><div class="spin"></div>Preparo il foglio…</div>
 <div class="print-sheet">
   <div class="page">
     <div class="p-band">
@@ -1186,19 +1188,24 @@ $('#nPrint').onclick=()=>{
   const P=falde.map(f=>f.poly).filter(Boolean);
   if(P.length) map.fitBounds(L.featureGroup(P).getBounds(),{padding:[30,30],maxZoom:20,animate:false});
   setTimeout(async ()=>{   // tempo per caricare i tile alla nuova inquadratura
+    // PDF A4 per Drive PRIMA della finestra di stampa (Lorenzo, 2026-09-25): finché quella finestra è
+    // aperta il browser ferma la pagina, e prima il PDF partiva solo dopo che la si chiudeva.
+    // Un velo copre lo schermo mentre il foglio si fotografa e si invia; qualunque errore non blocca la stampa.
+    $('#veloPdf').hidden=false; foglio.classList.add('foto');
+    try{
+      const blob=await generaPdf();
+      if(blob){
+        await pdfInCoda({dati:datiPerPdf(), blob});
+        // aspetto l'invio (di solito 1-2 s), ma mai più di 8 s: se la rete è lenta resta in coda e parte dopo
+        await Promise.race([inviaPdf(), new Promise(r=>setTimeout(r,8000))]);
+      }
+    }catch(e){ console.error('PDF non generato', e) }
+    foglio.classList.remove('foto'); $('#veloPdf').hidden=true;
     // Il browser propone il titolo della pagina come nome del PDF: ci metto il nome del contatto
     const titolo=document.title, nome=$('#cNome').value.trim().replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ');
     document.title='Dragondoro - Calcolo risparmio - '+nome;
     window.print();
     document.title=titolo;
-    // PDF A4 per Drive: il foglio è ancora pronto con la mappa inquadrata. Un velo copre lo schermo
-    // mentre lo si fotografa; se qualcosa va storto la stampa è già fatta e non si perde niente.
-    $('#veloPdf').hidden=false; foglio.classList.add('foto');
-    try{
-      const blob=await generaPdf();
-      if(blob){ await pdfInCoda({dati:datiPerPdf(), blob}); inviaPdf() }
-    }catch(e){ console.error('PDF non generato', e) }
-    foglio.classList.remove('foto'); $('#veloPdf').hidden=true;
     foglio.classList.remove('preparo');
     holder.insertBefore(m, holder.firstChild); m.style.height=h||''; map.invalidateSize();
     map.setView(vista.c, vista.z, {animate:false});
