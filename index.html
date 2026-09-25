@@ -6,8 +6,8 @@
 <!-- Non indicizzare (2026-09-25): il robots.txt nella cartella del repo non vale, Google legge solo quello alla radice del dominio -->
 <meta name="robots" content="noindex, nofollow, noarchive">
 <title>Calcolatore Fiera 2026 · Dragondoro</title>
-<link rel="icon" href="https://storage.googleapis.com/msgsndr/T6MmbT0wp7BOJaveBD1Q/media/68cd2f112539067afa118290.png">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="icon" href="assets/logo-dragondoro.png">
+<link rel="stylesheet" href="assets/leaflet.css">
 <style>
 /* Supreme dai file locali: funziona anche senza rete e il foglio stampato esce sempre col font del brand */
 @font-face{font-family:'Supreme';src:url('assets/Supreme-Regular.ttf') format('truetype');font-weight:400}
@@ -240,7 +240,7 @@ img{max-width:100%;display:block}
 <body>
 
 <header class="site-header no-print">
-  <img src="https://storage.googleapis.com/msgsndr/T6MmbT0wp7BOJaveBD1Q/media/68cd2f112539067afa118290.png" alt="Dragondoro">
+  <img src="assets/logo-dragondoro.png" alt="Dragondoro">
 </header>
 
 <main class="shell no-print">
@@ -518,7 +518,7 @@ img{max-width:100%;display:block}
   </div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="assets/leaflet.js"></script>
 <script>
 /* =========================================================================
    PARAMETRI DA CONFERMARE CON NICCOLÒ — valori segnaposto, NON verificati.
@@ -1124,8 +1124,8 @@ function caricaScript(src){ return new Promise((ok,ko)=>{ const t=document.creat
 const libPdf = Promise.all([
   // html2canvas-pro e non html2canvas 1.4: con il font Supreme l'originale disegnava il testo più in basso
   // del dovuto (etichette sul bordo dei riquadri, numeri in fondo ai cerchi). Segnalato da Lorenzo il 25/09.
-  caricaScript('https://cdn.jsdelivr.net/npm/html2canvas-pro@1.5.8/dist/html2canvas-pro.min.js'),
-  caricaScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')
+  caricaScript('assets/html2canvas-pro.min.js'),
+  caricaScript('assets/jspdf.umd.min.js')
 ]).catch(()=>null);
 async function generaPdf(){
   if(!(await libPdf) || !window.html2canvas || !window.jspdf) return null;
