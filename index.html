@@ -525,7 +525,7 @@ img{max-width:100%;display:block}
    ========================================================================= */
 const CFG = {
   PREZZO_ENERGIA:      0.28,   // €/kWh pagati in bolletta, tutto compreso   TODO
-  PREZZO_IMMISSIONE:   0.10,   // €/kWh riconosciuti sull'eccedenza          TODO
+  PREZZO_IMMISSIONE:   0.10,   // €/kWh riconosciuti sull'eccedenza. Dal 25/09 non entra più nel risparmio mostrato   TODO
   // Impianto sempre con batteria (Lorenzo, 2026-09-22): la versione senza batteria è stata tolta.
   // Taglia dell'impianto dalla tabella commerciale Dragondoro (Lorenzo, 2026-09-22), in base
   // al consumo annuo in kWh. Sopra gli 8.000 kWh: +2 kWp ogni 2.000 kWh, fino a 20.000.
@@ -919,7 +919,9 @@ function calcolaNumeri(){
   S.fonte = 'PVGIS-SARAH2 (Commissione Europea), resa misurata su questo territorio';
   const auto = Math.min(S.prodKwp*CFG.AUTOCONSUMO_BATT, consumo*CFG.INDIPENDENZA_MAX);
   const ecc  = Math.max(0, S.prodKwp-auto);
-  const risp = auto*CFG.PREZZO_ENERGIA + ecc*CFG.PREZZO_IMMISSIONE;
+  // Solo il risparmio in bolletta, cioè l'energia usata in casa (Lorenzo, 2026-09-25). Prima c'era anche
+  // l'energia venduta alla rete: il "risparmio in bolletta" superava la bolletta stessa e non tornava.
+  const risp = auto*CFG.PREZZO_ENERGIA;
   S.battKwh = CFG.BATT_TAGLIE.find(t=>Math.round(S.kwp*10)/10<=t.fino).kwh;
   S.calc = {consumo, auto, ecc, risp, cop:auto/consumo};
 }
@@ -1076,9 +1078,10 @@ function datiPerCrm(){
     regione:S.regione||'',
     tipo_casa:S.tipo||'',
     consumo_annuo_kwh:Math.round(c.consumo),
-    dato_di_partenza: I.modo==='kwh' ? 'bolletta '+fmtN(I.valore)+' kWh'
-                    : I.modo==='euro' ? 'bolletta '+fmtE(I.valore)+' all\'anno'
-                    : 'fascia '+(I.label||''),
+    // Frase leggibile anche dentro un'email: con l'unità di tempo, minuscola dopo i due punti
+    dato_di_partenza: I.modo==='kwh' ? 'consumo da bolletta: '+fmtN(I.valore)+' kWh l\'anno'
+                    : I.modo==='euro' ? 'spesa da bolletta: '+fmtE(I.valore)+' l\'anno'
+                    : 'spesa luce '+(I.label||'').replace(/^./,c=>c.toLowerCase()).replace(/ al mese$/,'')+' al mese',
     mq_falde:FO.map(f=>Math.round(f.area)).join(' + '),
     esposizione:S.ripartizione.map(f=>ESPOSIZIONI[f.aspect]+' ('+f.n+')').join(' + '),
     pannelli:S.pannelli,
@@ -1090,6 +1093,10 @@ function datiPerCrm(){
     risparmio_min:lo,
     risparmio_max:hi,
     rientro_stimato:S.rientro||'',
+    // Righe già scritte in italiano per l'email di riepilogo di GHL (2026-09-25): i numeri grezzi
+    // arrivano col punto decimale, e senza prezzo (sopra 10 kWp) la riga del rientro deve sparire
+    impianto_testo: fmtN(S.kwp,1)+' kWp · '+S.pannelli+' pannelli da '+CFG.W_PANNELLO+' W · batteria da circa '+fmtN(S.battKwh,1)+' kWh',
+    rientro_testo: S.rientro ? 'Tempo di rientro stimato: '+S.rientro+'. Nel conto c\'è già la detrazione fiscale del 50%, che lo Stato restituisce in 10 rate annuali.' : '',
     tetto_insufficiente:S.tettoLimita?'si':'no',
     nota:S.nota||''
   };
