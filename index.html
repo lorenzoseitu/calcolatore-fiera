@@ -315,6 +315,7 @@ img{max-width:100%;display:block}
       <div id="bMsg"></div>
       <h3 class="sec-title">Che tipo di casa è?</h3>
       <div id="tipoCasa"></div>
+      <input id="tipoAltro" class="field" placeholder="Che casa è? Es. casale, appartamento con tetto proprio" autocomplete="off" hidden style="margin-top:10px">
       <div class="nav"><button class="btn-ghost" data-back="2">Indietro</button><button class="btn" id="n3" disabled>Calcola</button></div>
     </section>
 
@@ -875,7 +876,18 @@ function daBolletta(campo){
 }
 $('#bKwh').addEventListener('input',()=>daBolletta('bKwh'));
 $('#bEur').addEventListener('input',()=>daBolletta('bEur'));
-radio($('#tipoCasa'),TIPI,it=>{S.tipo=it;checkStep3()});
+// "Altro" apre un campo da scrivere (Lorenzo, 2026-09-25): senza descrizione non si va avanti
+radio($('#tipoCasa'),TIPI,it=>{
+  const ta=$('#tipoAltro'); ta.hidden = it!=='Altro';
+  if(it==='Altro') ta.focus();
+  S.tipoBase=it; aggiornaTipo();
+});
+function aggiornaTipo(){
+  const t=$('#tipoAltro').value.trim();
+  S.tipo = S.tipoBase==='Altro' ? (t ? 'Altro: '+t : '') : (S.tipoBase||'');
+  checkStep3();
+}
+$('#tipoAltro').addEventListener('input',aggiornaTipo);
 function checkStep3(){ $('#n3').disabled = !(S.consumoAnnuo && S.tipo) }
 $('#n3').onclick=calcola;
 
