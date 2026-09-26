@@ -230,6 +230,14 @@ img{max-width:100%;display:block}
 .p-list li{counter-increment:n;background:#fff;border-radius:3mm;padding:3.2mm 4mm 3.2mm 13mm;position:relative;font-size:9pt;line-height:1.36}
 .p-list li::before{content:counter(n);position:absolute;left:3mm;top:3.2mm;width:6.8mm;height:6.8mm;border-radius:50%;background:var(--g);color:var(--o);font-weight:800;font-size:9.5pt;display:flex;align-items:center;justify-content:center}
 .p-list b{font-weight:700}
+/* Con Bolletta Zero la pagina delle 7 cose si stringe un po' per farci stare la fascia gialla */
+.sette .p-body{gap:2.2mm}
+.sette .p-list{gap:1.5mm}
+.sette .p-list li{padding-top:1.9mm;padding-bottom:1.9mm;font-size:8.5pt;line-height:1.3}
+.sette .p-list li::before{top:1.9mm;width:6mm;height:6mm;font-size:8.5pt}
+.p-bz{background:var(--o);color:var(--g);border-radius:4mm;padding:2.6mm 5mm;margin:0 8mm 2.5mm;flex:0 0 auto;font-size:8.6pt;line-height:1.3}
+.p-bz b{display:block;font-size:10pt;font-weight:800;margin-bottom:.8mm}
+.p-bz small{display:block;font-size:6.3pt;line-height:1.3;margin-top:1.2mm}
 .p-sub{font-size:8.5pt;font-weight:500;margin-top:-1.5mm}
 .p-cta{background:var(--g);color:#fff;border-radius:4mm;padding:3.5mm 5mm;margin:0 8mm 5mm;flex:0 0 auto}
 .p-cta b{color:var(--o);font-size:9.5pt;font-weight:800;display:block;margin-bottom:1.5mm}
@@ -502,7 +510,7 @@ img{max-width:100%;display:block}
   <div class="fissa"><img src="assets/pdf-gestione-garantita.jpg" alt="Gestione Garantita" loading="eager"></div>
   <div class="fissa"><img src="assets/pdf-scudo-dragondoro.jpg" alt="Scudo Dragondoro" loading="eager"></div>
 
-  <div class="page" id="pSette">
+  <div class="page sette" id="pSette">
     <div class="p-band">
       <img src="assets/logo-giallo.png" alt="Dragondoro">
       <div class="meta"><b>Prima di firmare</b>Il guardiano del tuo investimento solare</div>
@@ -519,6 +527,12 @@ img{max-width:100%;display:block}
       <li><b>Chi è l'unico responsabile legale e tecnico</b> dell'impianto tra 5 anni: il produttore dei pannelli, il rivenditore o l'installatore.</li>
       <li><b>Se il progetto nasce dai tuoi consumi reali</b> o da una stima generica sulla superficie del tetto. Un impianto sovra o sottodimensionato ti costa per vent'anni.</li>
     </ol>
+    </div>
+    <!-- Offerta Bolletta Zero (Lorenzo, 2026-09-26): solo su carta e nel PDF. Condizioni da dragondoro-fatti.md -->
+    <div class="p-bz">
+      <b>Offerta Bolletta Zero</b>
+      <div>Confermi entro il 10 ottobre 2026 e per 12 mesi dall'accensione la bolletta della luce la paghiamo noi.</div>
+      <small>Paghiamo la bolletta che resta dopo il fotovoltaico. Se pensi di aggiungere condizionatori, piano a induzione o pompa di calore, dillo prima: lo mettiamo nel calcolo.</small>
     </div>
     <div class="p-cta">
       <b id="pOffTit">Il tuo impianto</b>
