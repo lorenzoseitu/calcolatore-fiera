@@ -491,7 +491,7 @@ img{max-width:100%;display:block}
   <!-- Pagina 2: il foglio "Chi siamo" del passo 5, copiato qui al momento della stampa -->
   <div class="a4-slot"></div>
 
-  <div class="page">
+  <div class="page" id="pSette">
     <div class="p-band">
       <img src="assets/logo-giallo.png" alt="Dragondoro">
       <div class="meta"><b>Prima di firmare</b>Il guardiano del tuo investimento solare</div>
@@ -1118,7 +1118,8 @@ setInterval(inviaCoda, 60000);
 inviaCoda();
 
 /* ---------- PDF A4 su Drive, via Make ----------
-   Stesse 3 pagine della stampa, fotografate con html2canvas-pro e messe in un PDF A4 con jsPDF.
+   Stesse 3 pagine della stampa, fotografate con html2canvas-pro e messe in un PDF A4 con jsPDF,
+   più le 2 pagine fisse Gestione Garantita e Scudo Dragondoro (solo nel PDF, non in stampa).
    Le librerie si caricano all'apertura della pagina, così in fiera ci sono anche se poi la rete cade. */
 function caricaScript(src){ return new Promise((ok,ko)=>{ const t=document.createElement('script'); t.src=src; t.onload=ok; t.onerror=ko; document.head.appendChild(t) }) }
 const libPdf = Promise.all([
@@ -1127,18 +1128,29 @@ const libPdf = Promise.all([
   caricaScript('assets/html2canvas-pro.min.js'),
   caricaScript('assets/jspdf.umd.min.js')
 ]).catch(()=>null);
+// Gestione Garantita e Scudo Dragondoro in coda al PDF (Lorenzo, 2026-09-26: posizionamento).
+// Dal PDF "_Diagnosi Energetica - MADRE", A4 a 170 dpi; lette subito come dataURL, così ci sono anche offline.
+const PAGINE_FISSE = Promise.all(['assets/pdf-gestione-garantita.jpg','assets/pdf-scudo-dragondoro.jpg'].map(u=>
+  fetch(u).then(r=>r.ok?r.blob():Promise.reject()).then(b=>new Promise(ok=>{ const f=new FileReader(); f.onload=()=>ok(f.result); f.readAsDataURL(b) })).catch(()=>null)));
 async function generaPdf(){
   if(!(await libPdf) || !window.html2canvas || !window.jspdf) return null;
   const pagine=[...document.querySelectorAll('.print-sheet > .page, .print-sheet .a4-slot > .a4')];
   const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4',compress:true});
+  const fisse=[...await PAGINE_FISSE];            // copia: la lista si svuota dopo averle messe
+  // Ordine del PDF (Lorenzo, 2026-09-26): calcolo, Chi siamo, Gestione Garantita, Scudo, e in fondo le 7 cose
+  const aggiungiFisse=()=>fisse.forEach(img=>{ if(img){ doc.addPage(); doc.addImage(img,'JPEG',0,0,210,297) } });
+  const sette=pagine.find(el=>el.id==='pSette');
+  if(sette){ pagine.splice(pagine.indexOf(sette),1); pagine.push(sette) }
   for(let i=0;i<pagine.length;i++){
     const el=pagine[i];
+    if(el===sette){ aggiungiFisse(); fisse.length=0 }
     // le pagine A5 si ingrandiscono come in stampa: stessa risoluzione finale (~190 dpi) per tutte
     const scala = el.classList.contains('page') ? 2.83 : 2;
     const c=await html2canvas(el,{scale:scala,useCORS:true,backgroundColor:'#F5F2E8',logging:false});
     if(i) doc.addPage();
     doc.addImage(c.toDataURL('image/jpeg',0.82),'JPEG',0,0,210,297);
   }
+  aggiungiFisse();                                 // se la pagina delle 7 cose mancasse, le fisse vanno comunque in fondo
   return doc.output('blob');
 }
 // Coda dei PDF in IndexedDB; se il browser non la concede, resta in memoria finché la pagina è aperta
