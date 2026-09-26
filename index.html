@@ -233,6 +233,8 @@ img{max-width:100%;display:block}
 .p-cta b{color:var(--o);font-size:9.5pt;font-weight:800;display:block;margin-bottom:1.5mm}
 .p-cta .linee{display:flex;gap:5mm;font-size:8pt;margin-top:2.5mm}
 .p-cta .linee span{flex:1;border-bottom:.3mm solid rgba(255,255,255,.7);padding-bottom:1mm}
+.p-cta .prezzo{color:var(--o);font-weight:800;font-size:11pt}
+.p-cta .legale{font-size:5.8pt;line-height:1.3;opacity:.8;margin-top:1.8mm}
 .p-cta .sito{display:flex;justify-content:space-between;margin-top:3mm;font-size:7.5pt}
 .p-cta .sito em{font-style:normal;color:var(--o);font-weight:700}
 </style>
@@ -340,6 +342,8 @@ img{max-width:100%;display:block}
       </div>
       <div id="paybackBox" hidden style="margin-top:10px"><div class="kpi"><b id="rPay">—</b><span>Tempo di rientro stimato</span></div>
         <p class="disclaimer" style="margin-top:6px">Stima indicativa, calcolata considerando la detrazione fiscale del 50% recuperata in 10 anni. Da approfondire al sopralluogo.</p></div>
+      <div id="offBox" hidden style="margin-top:10px"><div class="kpi"><b id="rOff">—</b><span id="rOffSub">—</span></div>
+        <p class="disclaimer" style="margin-top:6px" id="rOffLeg"></p></div>
 
       <h3 class="sec-title">Produzione mese per mese</h3>
       <div class="chart" id="chart"></div>
@@ -510,9 +514,9 @@ img{max-width:100%;display:block}
     </ol>
     </div>
     <div class="p-cta">
-      <b>La tua Diagnosi Protezione Solare</b>
-      Il calcolo esatto si fa sul tetto, con il sopralluogo.
-      <div class="linee"><span>Giorno</span><span>Ora</span></div>
+      <b id="pOffTit">Il tuo impianto</b>
+      <div id="pOffTxt">Il prezzo di questo impianto si fa su misura, con il sopralluogo.</div>
+      <div class="legale" id="pOffLeg" hidden></div>
       <div class="sito"><span>Dragondoro</span><em>www.dragondoro.it</em></div>
     </div>
   </div>
@@ -567,8 +571,18 @@ const CFG = {
   // Prezzo di vendita per taglia (kWp), batteria compresa (Lorenzo, 2026-09-23). Non va letto in
   // chiaro nel sorgente: codificato (esadecimale XOR PK), serve solo al calcolo del rientro.
   // Da 12 kWp in su il prezzo non c'è e il rientro non compare.
-  PREZZI_TAGLIA: {3:'6f1c', 4:'60c0', 6:'64d8', 8:'834', 10:'fcc'},
+  // 3, 4 e 6 kWp aggiornati il 2026-09-26 ai prezzi di listino dell'offerta (sotto, OFFERTE); 8 e 10 restano quelli del 23/09.
+  PREZZI_TAGLIA: {3:'76d0', 4:'6f1c', 6:'6298', 8:'834', 10:'fcc'},
   PK: 0x5A3C,
+  // Offerta "a partire da" nel box in fondo al foglio, a schermo e nell'email (Lorenzo, 2026-09-26).
+  // Prezzi IVA inclusa, prima della detrazione del 50%. Rate: 48 mesi a rata1, poi 48 mesi a rata2.
+  // Qui il prezzo è in chiaro per forza: si mostra al cliente. Sopra i 6 kWp nessun prezzo, si fa al sopralluogo.
+  OFFERTE: {
+    3: {batt:5,  prezzo:11500, anticipo:3000, rata1:135, rata2:87},
+    4: {batt:10, prezzo:13600, anticipo:3000, rata1:168, rata2:109},
+    6: {batt:10, prezzo:14500, anticipo:5000, rata1:151, rata2:98},
+  },
+  FIN: {tan1:'8,45%', taeg1:'9,42%', tan2:'0%', taeg2:'1,53%', istruttoria:'0 €'},
   // Prezzi pieni. La detrazione del 50% rientra in 10 rate annuali (Lorenzo, 2026-09-23): negli
   // anni 1-10 il cliente recupera ogni anno risparmio + 5% del prezzo, dall'11° solo il risparmio.
   DETRAZIONE: 0.50,
@@ -954,6 +968,21 @@ function rientro(){
   const centro=Math.round(anni);
   return Math.max(1,centro-1)+'–'+(centro+1)+' anni';
 }
+// Offerta per la taglia proposta: stessa taglia più vicina del rientro, e la batteria deve essere quella dell'offerta
+function offerta(){
+  if(!S.kwp) return null;
+  const tagli=Object.keys(CFG.OFFERTE).map(Number);
+  const t=tagli.reduce((a,b)=>Math.abs(b-S.kwp)<Math.abs(a-S.kwp)?b:a);
+  const o=CFG.OFFERTE[t];
+  if(Math.abs(t-S.kwp)>1 || o.batt!==S.battKwh) return null;
+  const F=CFG.FIN, credito=o.prezzo-o.anticipo, dovuto=48*o.rata1+48*o.rata2;
+  return {...o, taglia:t,
+    titolo: t+' kWp con batteria da '+o.batt+' kWh',
+    prezzoTesto: 'a partire da '+fmtE(o.prezzo)+' IVA inclusa',
+    rateTesto: 'Oppure anticipo di '+fmtE(o.anticipo)+' e rate da '+fmtE(o.rata1)+' al mese per i primi 4 anni, poi '+fmtE(o.rata2)+' al mese per altri 4 anni a tasso zero.',
+    legale: 'Prezzo prima della detrazione fiscale del 50%. Esempio: importo finanziato '+fmtE(credito)+', 96 rate mensili (48 da '+fmtE(o.rata1)+' e 48 da '+fmtE(o.rata2)+'), importo totale dovuto '+fmtE(dovuto)+
+      '. Primi 48 mesi TAN '+F.tan1+', TAEG '+F.taeg1+'; successivi 48 mesi TAN '+F.tan2+', TAEG '+F.taeg2+'. Spese di istruttoria '+F.istruttoria+'. Salvo approvazione della società finanziaria.'};
+}
 function mostra(){
   const c=S.calc, lo=c.risp*(1-CFG.BANDA), hi=c.risp*(1+CFG.BANDA);
   const range = fmtE(Math.round(lo/50)*50)+' – '+fmtE(Math.round(hi/50)*50);
@@ -966,6 +995,9 @@ function mostra(){
   S.rientro = rientro();
   $('#paybackBox').hidden = !S.rientro;
   if(S.rientro) $('#rPay').textContent=S.rientro;
+  S.offerta = offerta(); const O=S.offerta;
+  $('#offBox').hidden = !O;
+  if(O){ $('#rOff').textContent=O.prezzoTesto.replace(/^a/,'A'); $('#rOffSub').textContent=O.titolo+'. '+O.rateTesto; $('#rOffLeg').textContent=O.legale }
   const max=Math.max(...S.mensili);
   $('#chart').innerHTML=S.mensili.map(v=>`<div style="height:${Math.max(3,v/max*100)}%"></div>`).join('');
   const sud=CFG.PVGIS_ANNO['0_'+S.tilt], qui=S.prodKwp/S.kwp;      // resa media dei pannelli, anche su più falde
@@ -1007,6 +1039,11 @@ function riempiFoglio(){
   $('#pData').textContent=new Date().toLocaleDateString('it-IT',{day:'numeric',month:'long',year:'numeric'});
   $('#pRange').innerHTML=fmtE(Math.round(lo/50)*50)+' – '+fmtE(Math.round(hi/50)*50)+'<small>l\'anno</small>';
   $('#pRientro').hidden=!S.rientro; $('#pPay').textContent=S.rientro||'';
+  const O=S.offerta;
+  $('#pOffTit').textContent = O ? 'Il tuo impianto: '+O.titolo : 'Il tuo impianto';
+  $('#pOffTxt').innerHTML = O ? '<span class="prezzo">'+O.prezzoTesto.replace(/^a/,'A')+'</span><br>'+O.rateTesto
+                              : 'Il prezzo di questo impianto si fa su misura, con il sopralluogo.';
+  $('#pOffLeg').hidden=!O; $('#pOffLeg').textContent=O?O.legale:'';
   $('#pKwp').textContent=fmtN(S.kwp,1)+' kWp';
   $('#pPan').textContent=S.pannelli+' da '+CFG.W_PANNELLO+' W';
   $('#pProd').textContent=fmtN(S.prodKwp)+' kWh';
@@ -1105,6 +1142,14 @@ function datiPerCrm(){
     risparmio_min:lo,
     risparmio_max:hi,
     rientro_stimato:S.rientro||'',
+    // Offerta (2026-09-26): vuota sopra i 6 kWp, dove il prezzo si fa al sopralluogo
+    prezzo_da:S.offerta?S.offerta.prezzo:'',
+    anticipo:S.offerta?S.offerta.anticipo:'',
+    rata_primi_4_anni:S.offerta?S.offerta.rata1:'',
+    rata_secondi_4_anni:S.offerta?S.offerta.rata2:'',
+    prezzo_testo:S.offerta?'Prezzo: '+S.offerta.prezzoTesto+' ('+S.offerta.titolo+').':'',
+    rate_testo:S.offerta?S.offerta.rateTesto:'',
+    finanziamento_note:S.offerta?S.offerta.legale:'',
     // Righe già scritte in italiano per l'email di riepilogo di GHL (2026-09-25): i numeri grezzi
     // arrivano col punto decimale, e senza prezzo (sopra 10 kWp) la riga del rientro deve sparire
     impianto_testo: fmtN(S.kwp,1)+' kWp · '+S.pannelli+' pannelli da '+CFG.W_PANNELLO+' W · batteria da circa '+fmtN(S.battKwh,1)+' kWh',
