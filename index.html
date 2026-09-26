@@ -994,7 +994,7 @@ function mostra(){
   const c=S.calc, lo=c.risp*(1-CFG.BANDA), hi=c.risp*(1+CFG.BANDA);
   const range = fmtE(Math.round(lo/50)*50)+' – '+fmtE(Math.round(hi/50)*50);
   $('#rRange').textContent=range;
-  $('#rSub').textContent = "all'anno, su questa casa, con batteria da circa "+fmtN(S.battKwh,1)+' kWh';
+  $('#rSub').textContent = "all'anno, su questa casa, con batteria da "+fmtN(S.battKwh,1)+' kWh';
   $('#rKwp').textContent=fmtN(S.kwp,1)+' kWp';
   $('#rProd').textContent=fmtN(S.prodKwp)+' kWh';
   $('#rCop').textContent=Math.round(c.cop*100)+'%';
@@ -1063,7 +1063,7 @@ function riempiFoglio(){
   $('#pConsRow').hidden = I.modo==='kwh';                          // il consumo è già il dato di partenza
   $('#pCons').textContent=fmtN(c.consumo)+' kWh/anno';
   $('#pTipo').textContent=S.tipo||'—';
-  $('#pBatt').textContent='Circa '+fmtN(S.battKwh,1)+' kWh';
+  $('#pBatt').textContent=fmtN(S.battKwh,1)+' kWh';
   const FO=falde.filter(faldaOk);
   $('#pAreaL').textContent = FO.length>1 ? 'Falde disegnate' : 'Falda disegnata';
   $('#pArea').textContent = FO.map(f=>fmtN(f.area)).join(' + ')+' m²';
@@ -1159,7 +1159,7 @@ function datiPerCrm(){
     finanziamento_note:S.offerta?S.offerta.legale:'',
     // Righe già scritte in italiano per l'email di riepilogo di GHL (2026-09-25): i numeri grezzi
     // arrivano col punto decimale, e senza prezzo (sopra 10 kWp) la riga del rientro deve sparire
-    impianto_testo: fmtN(S.kwp,1)+' kWp · '+S.pannelli+' pannelli da '+CFG.W_PANNELLO+' W · batteria da circa '+fmtN(S.battKwh,1)+' kWh',
+    impianto_testo: fmtN(S.kwp,1)+' kWp · '+S.pannelli+' pannelli da '+CFG.W_PANNELLO+' W · batteria da '+fmtN(S.battKwh,1)+' kWh',
     rientro_testo: S.rientro ? 'Tempo di rientro stimato: '+S.rientro+'. Nel conto c\'è già la detrazione fiscale del 50%, che lo Stato restituisce in 10 rate annuali.' : '',
     tetto_insufficiente:S.tettoLimita?'si':'no',
     nota:S.nota||''
